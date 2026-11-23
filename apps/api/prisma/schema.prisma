@@ -60,6 +60,9 @@ model Tenant {
   accessRules    AmenityAccessRule[]
   cleaningCombos CleaningCombo[]
   parkingConfig  ParkingConfig?
+  units          Unit[]
+  persons        Person[]
+  occupancies    Occupancy[]
 
   @@map("tenants")
 }
@@ -222,6 +225,7 @@ model UnitType {
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  units  Unit[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -305,4 +309,71 @@ model ParkingConfig {
 
   @@index([tenantId])
   @@map("parking_configs")
+}
+
+/// Residential unit in a building (RLS)
+model Unit {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  number          String
+  floor           Int
+  unitTypeId      String   @map("unit_type_id") @db.Uuid
+  monthlyFeeCents Int      @default(0) @map("monthly_fee_cents")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unitType    UnitType    @relation(fields: [unitTypeId], references: [id])
+  occupancies Occupancy[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId])
+  @@map("units")
+}
+
+/// Resident, owner, host or guest person (RLS, encrypted national ID, unique WhatsApp phone per tenant)
+model Person {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  fullName       String    @map("full_name")
+  nationalIdEnc  String    @map("national_id_enc")
+  nationalIdHash String    @map("national_id_hash")
+  nationalIdMask String    @map("national_id_mask")
+  waPhone        String    @map("wa_phone")
+  email          String?
+  consentAt      DateTime? @map("consent_at") @db.Timestamptz
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  occupancies Occupancy[]
+
+  @@unique([tenantId, waPhone])
+  @@index([tenantId])
+  @@index([tenantId, nationalIdHash])
+  @@map("persons")
+}
+
+/// Person-to-unit occupancy with role and validity window (RLS)
+model Occupancy {
+  id        String        @id @db.Uuid
+  tenantId  String        @map("tenant_id") @db.Uuid
+  personId  String        @map("person_id") @db.Uuid
+  unitId    String        @map("unit_id") @db.Uuid
+  role      OccupancyRole
+  validFrom DateTime      @map("valid_from") @db.Timestamptz
+  validTo   DateTime?     @map("valid_to") @db.Timestamptz
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+  unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, unitId])
+  @@index([tenantId, personId])
+  @@map("occupancies")
 }
