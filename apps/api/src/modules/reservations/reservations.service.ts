@@ -43,28 +43,36 @@ export class ReservationsService {
     input: CreateReservationInput,
     now: Date,
   ): Promise<EvaluationInput> {
-    const [tenant, settings, unit, amenities, accessRules, combos, existing] = await Promise.all([
-      tx.tenant.findUnique({ where: { id: ctx.tenantId } }),
-      tx.tenantSettings.findUnique({ where: { tenantId: ctx.tenantId } }),
-      tx.unit.findFirst({
-        where: { id: input.unitId, tenantId: ctx.tenantId, isActive: true },
-        include: { unitType: true, occupancies: true },
-      }),
-      tx.amenity.findMany({
-        where: { tenantId: ctx.tenantId, id: { in: input.amenityIds } },
-      }),
-      tx.amenityAccessRule.findMany({
-        where: { tenantId: ctx.tenantId, amenityId: { in: input.amenityIds } },
-      }),
-      tx.cleaningCombo.findMany({ where: { tenantId: ctx.tenantId } }),
-      tx.reservation.findMany({
-        where: {
-          tenantId: ctx.tenantId,
-          status: { in: ['PENDING_PAYMENT', 'IN_REVIEW', 'CONFIRMED', 'COMPLETED', 'ADMIN_BLOCK'] },
-        },
-        include: { amenities: { select: { amenityId: true } } },
-      }),
-    ]);
+    const [tenant, settings, unit, amenities, accessRules, combos, existing, ledgerEntries, depositAccount] =
+      await Promise.all([
+        tx.tenant.findUnique({ where: { id: ctx.tenantId } }),
+        tx.tenantSettings.findUnique({ where: { tenantId: ctx.tenantId } }),
+        tx.unit.findFirst({
+          where: { id: input.unitId, tenantId: ctx.tenantId, isActive: true },
+          include: { unitType: true, occupancies: true },
+        }),
+        tx.amenity.findMany({
+          where: { tenantId: ctx.tenantId, id: { in: input.amenityIds } },
+        }),
+        tx.amenityAccessRule.findMany({
+          where: { tenantId: ctx.tenantId, amenityId: { in: input.amenityIds } },
+        }),
+        tx.cleaningCombo.findMany({ where: { tenantId: ctx.tenantId } }),
+        tx.reservation.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            status: { in: ['PENDING_PAYMENT', 'IN_REVIEW', 'CONFIRMED', 'COMPLETED', 'ADMIN_BLOCK'] },
+          },
+          include: { amenities: { select: { amenityId: true } } },
+        }),
+        tx.ledgerEntry.findMany({
+          where: { tenantId: ctx.tenantId, unitId: input.unitId },
+          select: { type: true, amountCents: true, dueDate: true },
+        }),
+        tx.depositAccount.findUnique({
+          where: { tenantId_unitId: { tenantId: ctx.tenantId, unitId: input.unitId } },
+        }),
+      ]);
 
     if (!tenant || !settings) {
       throw new DomainError(
@@ -95,6 +103,22 @@ export class ReservationsService {
       cleaningFeeCents: a.cleaningFeeCents,
     }));
 
+    // Compute real overdue monthly fee months (R04) and real deposit balance (R05)
+    const overdueFees = ledgerEntries
+      .filter((e) => e.type === 'MONTHLY_FEE' && e.amountCents > 0 && e.dueDate && e.dueDate < now)
+      .sort((a, b) => (a.dueDate?.getTime() ?? 0) - (b.dueDate?.getTime() ?? 0));
+    let totalPaid = ledgerEntries
+      .filter((e) => e.amountCents < 0)
+      .reduce((sum, e) => sum + Math.abs(e.amountCents), 0);
+    let arrearsMonths = 0;
+    for (const fee of overdueFees) {
+      if (totalPaid >= fee.amountCents) {
+        totalPaid -= fee.amountCents;
+      } else {
+        arrearsMonths++;
+      }
+    }
+
     return {
       now,
       timezone: tenant.timezone,
@@ -109,9 +133,8 @@ export class ReservationsService {
       unit: {
         id: unit.id,
         unitType: { code: unit.unitType.code, includedGuests: unit.unitType.includedGuests },
-        // Billing module (spec 007) will supply real arrears & deposit balances; defaults allow Phase 1 testing
-        arrearsMonths: 0,
-        depositBalanceCents: settings.depositRequiredCents,
+        arrearsMonths,
+        depositBalanceCents: depositAccount?.balanceCents ?? 0,
         suspendedUntil: null,
         occupancies: unit.occupancies.map((o) => ({
           personId: o.personId,

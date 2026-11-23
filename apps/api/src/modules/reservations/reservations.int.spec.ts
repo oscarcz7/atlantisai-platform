@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { generateUuidV7, type TenantContext } from '@noah/domain';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { FieldEncryptionService } from '../auth/crypto/field-encryption.service.js';
+import { BillingService } from '../billing/billing.service.js';
 import { CadastreService } from '../cadastre/cadastre.service.js';
 import { CatalogService } from '../catalog/catalog.service.js';
 import {
@@ -18,6 +19,7 @@ describe('Reservations integration: rules, concurrency, idempotency, expiration 
   const tenantsService = new TenantsService(prisma);
   const catalogService = new CatalogService(prisma);
   const cadastreService = new CadastreService(prisma, encryption);
+  const billingService = new BillingService(prisma);
   const reservationsService = new ReservationsService(prisma);
 
   const suffix = generateUuidV7().slice(0, 8);
@@ -96,6 +98,20 @@ describe('Reservations integration: rules, concurrency, idempotency, expiration 
       unitId: unit2Id,
       role: 'OWNER_RESIDENT',
       validFrom: '2026-01-01T00:00:00Z',
+    });
+
+    // Seed required USD 200 deposit for both units (R05)
+    await billingService.recordDepositMovement(ctx, {
+      unitId: unit1Id,
+      type: 'DEPOSIT',
+      amountCents: 20000,
+      reason: 'Garantía inicial',
+    });
+    await billingService.recordDepositMovement(ctx, {
+      unitId: unit2Id,
+      type: 'DEPOSIT',
+      amountCents: 20000,
+      reason: 'Garantía inicial',
     });
   });
 

@@ -48,6 +48,42 @@ enum ReservationStatus {
   ADMIN_BLOCK
 }
 
+enum LedgerEntryType {
+  MONTHLY_FEE
+  CLEANING
+  EXTRA_GUEST
+  PARKING_OVERTIME
+  DAMAGE
+  PAYMENT
+  ADJUSTMENT
+}
+
+enum DepositMovementType {
+  DEPOSIT
+  DEDUCTION
+  REFUND
+}
+
+enum PaymentProofStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TicketUrgency {
+  LOW
+  MEDIUM
+  HIGH
+  EMERGENCY
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
 /// Global SaaS table (not tenant-scoped)
 model Tenant {
   id           String   @id @db.Uuid
@@ -453,4 +489,154 @@ model ReservationAttendee {
 
   @@index([tenantId, reservationId])
   @@map("reservation_attendees")
+}
+
+/// Unit ledger entries: positive = charge, negative = payment/credit (RLS)
+model LedgerEntry {
+  id          String          @id @db.Uuid
+  tenantId    String          @map("tenant_id") @db.Uuid
+  unitId      String          @map("unit_id") @db.Uuid
+  type        LedgerEntryType
+  amountCents Int             @map("amount_cents")
+  description String
+  reference   String?
+  dueDate     DateTime?       @map("due_date") @db.Timestamptz
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, unitId])
+  @@index([tenantId, unitId, type, dueDate])
+  @@map("ledger_entries")
+}
+
+/// Deposit account balance per unit (RLS)
+model DepositAccount {
+  id           String   @id @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  unitId       String   @map("unit_id") @db.Uuid
+  balanceCents Int      @default(0) @map("balance_cents")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  movements DepositMovement[]
+
+  @@unique([tenantId, unitId])
+  @@index([tenantId])
+  @@map("deposit_accounts")
+}
+
+/// Deposit movements: deposits, damage deductions with reason/evidence, refunds (RLS)
+model DepositMovement {
+  id               String              @id @db.Uuid
+  tenantId         String              @map("tenant_id") @db.Uuid
+  depositAccountId String              @map("deposit_account_id") @db.Uuid
+  type             DepositMovementType
+  amountCents      Int                 @map("amount_cents")
+  reason           String
+  evidenceKey      String?             @map("evidence_key")
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz
+
+  depositAccount DepositAccount @relation(fields: [depositAccountId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, depositAccountId])
+  @@map("deposit_movements")
+}
+
+/// Payment proof submitted for accountant review (RLS)
+model PaymentProof {
+  id              String             @id @db.Uuid
+  tenantId        String             @map("tenant_id") @db.Uuid
+  unitId          String             @map("unit_id") @db.Uuid
+  reservationId   String?            @map("reservation_id") @db.Uuid
+  fileKey         String             @map("file_key")
+  bank            String
+  amountCents     Int                @map("amount_cents")
+  transferDate    DateTime           @map("transfer_date") @db.Timestamptz
+  reference       String
+  extractedBy     String             @default("HUMAN") @map("extracted_by")
+  status          PaymentProofStatus @default(PENDING)
+  reviewedBy      String?            @map("reviewed_by")
+  rejectionReason String?            @map("rejection_reason")
+  reviewedAt      DateTime?          @map("reviewed_at") @db.Timestamptz
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, status])
+  @@index([tenantId, reference, amountCents])
+  @@map("payment_proofs")
+}
+
+/// Sequential collection receipt per building (RLS)
+model CollectionReceipt {
+  id              String   @id @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  unitId          String   @map("unit_id") @db.Uuid
+  sequenceNumber  Int      @map("sequence_number")
+  receiptCode     String   @map("receipt_code")
+  amountCents     Int      @map("amount_cents")
+  paymentProofId  String?  @map("payment_proof_id") @db.Uuid
+  ledgerEntryIds  String[] @map("ledger_entry_ids") @db.Uuid
+  issuedAt        DateTime @default(now()) @map("issued_at") @db.Timestamptz
+
+  @@unique([tenantId, sequenceNumber])
+  @@index([tenantId, unitId])
+  @@map("collection_receipts")
+}
+
+/// Visitor log & parking spot timer for garita console (RLS)
+model Visit {
+  id             String    @id @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  hostUnitId     String    @map("host_unit_id") @db.Uuid
+  visitorName    String    @map("visitor_name")
+  nationalIdEnc  String    @map("national_id_enc")
+  nationalIdMask String    @map("national_id_mask")
+  plate          String?
+  needsParking   Boolean   @default(false) @map("needs_parking")
+  parkingSpot    Int?      @map("parking_spot")
+  expectedAt     DateTime  @map("expected_at") @db.Timestamptz
+  checkInAt      DateTime? @map("check_in_at") @db.Timestamptz
+  checkOutAt     DateTime? @map("check_out_at") @db.Timestamptz
+  overtimeCents  Int       @default(0) @map("overtime_cents")
+  registeredBy   String    @map("registered_by")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, expectedAt])
+  @@index([tenantId, parkingSpot, checkOutAt])
+  @@map("visits")
+}
+
+/// Incident tickets with 48h duplicate detection (RLS)
+model Ticket {
+  id          String        @id @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  category    String
+  location    String
+  description String
+  urgency     TicketUrgency @default(MEDIUM)
+  status      TicketStatus  @default(OPEN)
+  photos      String[]      @default([])
+  reportedBy  String        @map("reported_by")
+  assignedTo  String?       @map("assigned_to")
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  subscribers TicketSubscriber[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, location, category, createdAt])
+  @@map("tickets")
+}
+
+/// Residents/staff subscribed to ticket closure notifications (RLS)
+model TicketSubscriber {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  ticketId  String   @map("ticket_id") @db.Uuid
+  personId  String   @map("person_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, personId])
+  @@index([tenantId, ticketId])
+  @@map("ticket_subscribers")
 }
