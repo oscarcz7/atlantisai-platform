@@ -1,5 +1,15 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": [
+    "DATABASE_URL",
+    "DATABASE_MIGRATION_URL",
+    "API_PORT",
+    "WEB_PORT",
+    "PORT",
+    "NODE_ENV",
+    "SENTRY_DSN",
+    "NEXT_PUBLIC_API_URL"
+  ],
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**", ".next/**", "!.next/cache/**"] },
     "dev": { "cache": false, "persistent": true },
