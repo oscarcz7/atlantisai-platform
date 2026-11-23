@@ -1,0 +1,545 @@
+{
+  "version": "1.0",
+  "notes": "Cada herramienta mapea a un método de servicio en apps/api/src/modules/ai/tools/. Ejecutan con el TenantContext y la persona de la conversación; nunca aceptan unitId ni personId del modelo. Las herramientas con effect=true y campo confirmationToken solo funcionan tras el botón Confirmar del residente.",
+  "tools": [
+    {
+      "agent": "orquestador",
+      "name": "route_to_agent",
+      "description": "Deriva la conversación a un agente especializado.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "enum": [
+              "reservas",
+              "visitas",
+              "financiero",
+              "incidencias"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "orquestador",
+      "name": "show_main_menu",
+      "description": "Envía el menú principal como lista interactiva.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "orquestador",
+      "name": "handoff_to_human",
+      "description": "Transfiere la conversación a la administración y pausa el bot en este chat.",
+      "effect": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "reservas",
+      "name": "check_availability",
+      "description": "Consulta horarios disponibles de un área en una fecha.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "amenities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Nombres o IDs de áreas; varias para un combo"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "attendees": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "amenities",
+          "date"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "reservas",
+      "name": "simulate_reservation",
+      "description": "Evalúa una reserva con el motor de reglas sin guardarla. Devuelve rechazo con código y mensaje, o resumen con cobros y un confirmationToken.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "amenities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Nombres o IDs de áreas; varias para un combo"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 con zona horaria"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 con zona horaria"
+          },
+          "declaredAttendees": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "amenities",
+          "startsAt",
+          "endsAt",
+          "declaredAttendees"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "reservas",
+      "name": "create_reservation",
+      "description": "Crea la reserva previamente simulada y confirmada por el residente.",
+      "effect": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "confirmationToken": {
+            "type": "string",
+            "description": "Token emitido cuando el residente pulsa Confirmar en la vista previa"
+          }
+        },
+        "required": [
+          "confirmationToken"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "reservas",
+      "name": "list_my_reservations",
+      "description": "Lista las reservas próximas de la unidad de la persona.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "includePast": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "reservas",
+      "name": "simulate_cancellation",
+      "description": "Muestra qué pasaría al cancelar (reembolsos, saldo a favor) y devuelve un confirmationToken.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "reservationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "reservationId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "reservas",
+      "name": "cancel_reservation",
+      "description": "Cancela una reserva confirmada por el residente.",
+      "effect": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "confirmationToken": {
+            "type": "string",
+            "description": "Token emitido cuando el residente pulsa Confirmar en la vista previa"
+          }
+        },
+        "required": [
+          "confirmationToken"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "reservas",
+      "name": "get_reservation_passes",
+      "description": "Obtiene los pases QR de una reserva confirmada.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "reservationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "reservationId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "visitas",
+      "name": "send_visit_form",
+      "description": "Envía el formulario de registro de visita (WhatsApp Flow o enlace firmado).",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "expectedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 con zona horaria"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "visitas",
+      "name": "preview_visit",
+      "description": "Valida los datos de una visita y devuelve resumen con confirmationToken.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "visitorName": {
+            "type": "string"
+          },
+          "nationalId": {
+            "type": "string"
+          },
+          "plate": {
+            "type": "string"
+          },
+          "needsParking": {
+            "type": "boolean"
+          },
+          "expectedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 con zona horaria"
+          }
+        },
+        "required": [
+          "visitorName",
+          "nationalId",
+          "needsParking",
+          "expectedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "visitas",
+      "name": "register_visit",
+      "description": "Registra la visita confirmada y avisa a garita.",
+      "effect": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "confirmationToken": {
+            "type": "string",
+            "description": "Token emitido cuando el residente pulsa Confirmar en la vista previa"
+          }
+        },
+        "required": [
+          "confirmationToken"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "visitas",
+      "name": "get_visit_pass",
+      "description": "Obtiene el pase de una visita registrada.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "visitId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "visitId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "visitas",
+      "name": "send_airbnb_guest_form",
+      "description": "Envía el formulario de registro de huésped Airbnb. Solo para anfitriones.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "financiero",
+      "name": "get_account_statement",
+      "description": "Devuelve el estado de cuenta de la unidad.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "financiero",
+      "name": "get_deposit_status",
+      "description": "Devuelve el saldo de garantía y si permite reservar.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "financiero",
+      "name": "get_bank_accounts",
+      "description": "Devuelve las cuentas bancarias oficiales del edificio.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "MONTHLY_FEE",
+              "CLEANING",
+              "DEPOSIT"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "financiero",
+      "name": "submit_payment_proof",
+      "description": "Registra un comprobante recibido, extrae sus datos con IA y lo envía a la bandeja del contador. No aprueba pagos.",
+      "effect": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "mediaId": {
+            "type": "string",
+            "description": "ID del archivo recibido por WhatsApp"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "MONTHLY_FEE",
+              "CLEANING",
+              "DEPOSIT",
+              "OTHER"
+            ]
+          },
+          "reservationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "mediaId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "financiero",
+      "name": "get_payment_proof_status",
+      "description": "Consulta el estado de los comprobantes enviados.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "incidencias",
+      "name": "search_manual",
+      "description": "Busca en el Manual y reglamento del edificio. Devuelve fragmentos con su sección.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "incidencias",
+      "name": "find_open_tickets",
+      "description": "Busca tickets abiertos similares en las últimas 48 horas.",
+      "effect": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "location"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "incidencias",
+      "name": "create_ticket",
+      "description": "Crea un ticket confirmado por el residente.",
+      "effect": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH"
+            ]
+          },
+          "mediaIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confirmationToken": {
+            "type": "string",
+            "description": "Token emitido cuando el residente pulsa Confirmar en la vista previa"
+          }
+        },
+        "required": [
+          "category",
+          "location",
+          "description",
+          "urgency",
+          "confirmationToken"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "incidencias",
+      "name": "subscribe_to_ticket",
+      "description": "Suscribe a la persona al aviso de cierre de un ticket.",
+      "effect": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "ticketId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "ticketId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "agent": "incidencias",
+      "name": "send_urgent_alert",
+      "description": "Alerta de inmediato a guardianía y administración por una emergencia. No requiere confirmación.",
+      "effect": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}
