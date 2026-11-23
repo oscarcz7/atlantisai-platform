@@ -1,0 +1,4 @@
+project_id = "noah-platform-prd"
+region     = "us-east1"
+api_image  = "us-east1-docker.pkg.dev/noah-platform-prd/noah/api:v0.1.0"
+web_image  = "us-east1-docker.pkg.dev/noah-platform-prd/noah/web:v0.1.0"

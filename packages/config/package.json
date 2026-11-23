@@ -1,0 +1,12 @@
+{
+  "name": "@noah/config",
+  "version": "0.1.0",
+  "private": true,
+  "files": ["tsconfig.node.json", "tsconfig.react.json"],
+  "scripts": {
+    "lint": "echo \"@noah/config lint ok\"",
+    "typecheck": "echo \"@noah/config typecheck ok\"",
+    "test": "echo \"@noah/config test ok\"",
+    "build": "echo \"@noah/config build ok\""
+  }
+}

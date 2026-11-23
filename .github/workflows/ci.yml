@@ -38,6 +38,11 @@ jobs:
       - name: Instalar dependencias
         run: |
           if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else pnpm install; fi
+      - name: Generar cliente Prisma y aplicar migraciones
+        run: |
+          pnpm --filter @noah/api db:generate
+          DATABASE_URL="${DATABASE_MIGRATION_URL}" pnpm --filter @noah/api prisma migrate deploy
+      - run: pnpm build
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test

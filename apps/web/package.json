@@ -1,0 +1,28 @@
+{
+  "name": "@noah/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p ${WEB_PORT:-3000}",
+    "build": "next build",
+    "start": "next start -p ${PORT:-3000}",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"@noah/web unit tests start in Phase 1\"",
+    "test:int": "echo \"no integration tests in @noah/web\"",
+    "test:e2e": "echo \"e2e tests start in Phase 1\""
+  },
+  "dependencies": {
+    "@noah/domain": "workspace:*",
+    "@noah/ui": "workspace:*",
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}

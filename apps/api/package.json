@@ -1,0 +1,40 @@
+{
+  "name": "@noah/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "db:generate": "prisma generate",
+    "start": "node dist/main.js",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "test:int": "vitest run --config vitest.int.config.ts",
+    "test:e2e": "echo \"e2e tests start in Phase 1\"",
+    "prisma": "prisma",
+    "seed": "echo \"seed implemented in spec 003-configurador\""
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.4.15",
+    "@nestjs/core": "^10.4.15",
+    "@nestjs/platform-express": "^10.4.15",
+    "@noah/domain": "workspace:*",
+    "@noah/rules": "workspace:*",
+    "@prisma/client": "^5.22.0",
+    "@sentry/node": "^8.45.0",
+    "pg": "^8.13.1",
+    "pg-boss": "^10.1.5",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.8"
+  }
+}

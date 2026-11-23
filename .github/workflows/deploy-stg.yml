@@ -1,0 +1,72 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_REGION: ${{ vars.GCP_REGION || 'us-east1' }}
+  GCP_PROJECT: ${{ vars.GCP_PROJECT_STG }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push API image
+        run: |
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/noah/api:${GITHUB_SHA}"
+          docker build -f apps/api/Dockerfile -t "${IMAGE}" .
+          docker push "${IMAGE}"
+
+      - name: Build and push Web image
+        run: |
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/noah/web:${GITHUB_SHA}"
+          docker build -f apps/web/Dockerfile -t "${IMAGE}" .
+          docker push "${IMAGE}"
+
+      - name: Run database migrations (Cloud Run Job)
+        run: |
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/noah/api:${GITHUB_SHA}"
+          gcloud run jobs update noah-api-migrate \
+            --project "${GCP_PROJECT}" \
+            --region "${GCP_REGION}" \
+            --image "${IMAGE}" \
+            --command "npx" \
+            --args "prisma,migrate,deploy,--schema=prisma/schema.prisma"
+          gcloud run jobs execute noah-api-migrate \
+            --project "${GCP_PROJECT}" \
+            --region "${GCP_REGION}" \
+            --wait
+
+      - name: Deploy API to Cloud Run
+        run: |
+          gcloud run deploy noah-api \
+            --project "${GCP_PROJECT}" \
+            --region "${GCP_REGION}" \
+            --image "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/noah/api:${GITHUB_SHA}" \
+            --quiet
+
+      - name: Deploy Web to Cloud Run
+        run: |
+          gcloud run deploy noah-web \
+            --project "${GCP_PROJECT}" \
+            --region "${GCP_REGION}" \
+            --image "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/noah/web:${GITHUB_SHA}" \
+            --quiet
