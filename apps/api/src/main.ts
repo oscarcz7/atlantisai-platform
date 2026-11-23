@@ -23,4 +23,7 @@ async function bootstrap(): Promise<void> {
   logger.log(`API listening on port ${port}`, 'Bootstrap');
 }
 
-void bootstrap();
+bootstrap().catch((err: unknown) => {
+  process.stderr.write(`${JSON.stringify({ severity: 'ERROR', context: 'Bootstrap', error: String(err) })}\n`);
+  process.exit(1);
+});

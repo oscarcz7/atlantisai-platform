@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Usuario de la aplicación: sin BYPASSRLS, sujeto a Row-Level Security.
 CREATE ROLE noah_app LOGIN PASSWORD 'noah_app' NOBYPASSRLS;
-GRANT CONNECT ON DATABASE noah TO noah_app;
+GRANT CONNECT, CREATE ON DATABASE noah TO noah_app;
 GRANT USAGE ON SCHEMA public TO noah_app;
 CREATE SCHEMA IF NOT EXISTS pgboss AUTHORIZATION noah_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE noah_owner IN SCHEMA public
