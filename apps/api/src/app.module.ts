@@ -5,6 +5,7 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { CadastreModule } from './modules/cadastre/cadastre.module.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { ReservationsModule } from './modules/reservations/reservations.module.js';
 import { TenantsModule } from './modules/tenants/tenants.module.js';
 
 @Module({
@@ -15,6 +16,7 @@ import { TenantsModule } from './modules/tenants/tenants.module.js';
     TenantsModule,
     CatalogModule,
     CadastreModule,
+    ReservationsModule,
     HealthModule,
   ],
 })

@@ -38,6 +38,16 @@ enum OccupancyRole {
   AIRBNB_GUEST
 }
 
+enum ReservationStatus {
+  PENDING_PAYMENT
+  IN_REVIEW
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+  COMPLETED
+  ADMIN_BLOCK
+}
+
 /// Global SaaS table (not tenant-scoped)
 model Tenant {
   id           String   @id @db.Uuid
@@ -63,6 +73,7 @@ model Tenant {
   units          Unit[]
   persons        Person[]
   occupancies    Occupancy[]
+  reservations   Reservation[]
 
   @@map("tenants")
 }
@@ -253,6 +264,7 @@ model Amenity {
 
   tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   accessRules AmenityAccessRule[]
+  reservations ReservationAmenity[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -326,6 +338,7 @@ model Unit {
   tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   unitType    UnitType    @relation(fields: [unitTypeId], references: [id])
   occupancies Occupancy[]
+  reservations Reservation[]
 
   @@unique([tenantId, number])
   @@index([tenantId])
@@ -349,6 +362,7 @@ model Person {
 
   tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   occupancies Occupancy[]
+  reservations Reservation[]
 
   @@unique([tenantId, waPhone])
   @@index([tenantId])
@@ -376,4 +390,67 @@ model Occupancy {
   @@index([tenantId, unitId])
   @@index([tenantId, personId])
   @@map("occupancies")
+}
+
+/// Amenity reservation or administrative block (RLS)
+model Reservation {
+  id                 String            @id @db.Uuid
+  tenantId           String            @map("tenant_id") @db.Uuid
+  unitId             String?           @map("unit_id") @db.Uuid
+  personId           String?           @map("person_id") @db.Uuid
+  startsAt           DateTime          @map("starts_at") @db.Timestamptz
+  endsAt             DateTime          @map("ends_at") @db.Timestamptz
+  declaredAttendees  Int               @default(1) @map("declared_attendees")
+  status             ReservationStatus
+  channel            String            @default("DASHBOARD")
+  totalCents         Int               @default(0) @map("total_cents")
+  charges            Json?
+  holdExpiresAt      DateTime?         @map("hold_expires_at") @db.Timestamptz
+  cancellationReason String?           @map("cancellation_reason")
+  idempotencyKey     String?           @map("idempotency_key")
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant    Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit      Unit?                 @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  person    Person?               @relation(fields: [personId], references: [id], onDelete: SetNull)
+  amenities ReservationAmenity[]
+  attendees ReservationAttendee[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, startsAt, endsAt])
+  @@index([tenantId, status, holdExpiresAt])
+  @@map("reservations")
+}
+
+/// Join table linking a reservation to one or more amenities (combos) (RLS)
+model ReservationAmenity {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  reservationId String   @map("reservation_id") @db.Uuid
+  amenityId     String   @map("amenity_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  amenity     Amenity     @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@unique([reservationId, amenityId])
+  @@index([tenantId, amenityId])
+  @@map("reservation_amenities")
+}
+
+/// Declared attendees for a reservation (RLS)
+model ReservationAttendee {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  reservationId String   @map("reservation_id") @db.Uuid
+  name          String?
+  waPhone       String?  @map("wa_phone")
+  isExtra       Boolean  @default(false) @map("is_extra")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, reservationId])
+  @@map("reservation_attendees")
 }
