@@ -1,5 +1,3 @@
-import { randomBytes } from 'node:crypto';
-
 export class DomainError extends Error {
   public readonly code: string;
   public readonly statusCode: number;
@@ -20,10 +18,11 @@ export class DomainError extends Error {
 }
 
 /**
- * Generates a time-ordered UUID v7 string (RFC 9562).
+ * Generates a time-ordered UUID v7 string (RFC 9562), isomorphic (Node 22+ & browsers).
  */
 export function generateUuidV7(nowMs: number = Date.now()): string {
-  const bytes = randomBytes(16);
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
 
   // 48-bit big-endian Unix timestamp in milliseconds
   bytes[0] = Math.floor(nowMs / 2 ** 40) & 0xff;
@@ -38,7 +37,7 @@ export function generateUuidV7(nowMs: number = Date.now()): string {
   // Set variant 10xx
   bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
 
-  const hex = bytes.toString('hex');
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 

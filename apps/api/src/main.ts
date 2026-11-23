@@ -1,6 +1,8 @@
 import 'reflect-metadata';
 import * as Sentry from '@sentry/node';
+import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module.js';
 import { DomainErrorFilter } from './common/filters/domain-error.filter.js';
 import { JsonLogger } from './common/logging/json-logger.service.js';
@@ -15,6 +17,12 @@ async function bootstrap(): Promise<void> {
 
   const logger = new JsonLogger();
   const app = await NestFactory.create(AppModule, { logger });
+  app.use(cookieParser());
+  app.enableCors({
+    origin: process.env['WEB_URL'] ?? 'http://localhost:3000',
+    credentials: true,
+  });
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
   app.useGlobalFilters(new DomainErrorFilter());
   app.enableShutdownHooks();
 
@@ -24,6 +32,8 @@ async function bootstrap(): Promise<void> {
 }
 
 bootstrap().catch((err: unknown) => {
-  process.stderr.write(`${JSON.stringify({ severity: 'ERROR', context: 'Bootstrap', error: String(err) })}\n`);
+  process.stderr.write(
+    `${JSON.stringify({ severity: 'ERROR', context: 'Bootstrap', error: String(err) })}\n`,
+  );
   process.exit(1);
 });

@@ -7,6 +7,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum StaffRole {
+  SUPERADMIN
+  ADMIN
+  ACCOUNTANT
+  GUARD
+}
+
+enum StaffTokenType {
+  INVITE
+  PASSWORD_RESET
+}
+
 /// Global SaaS table (not tenant-scoped)
 model Tenant {
   id        String   @id @db.Uuid
@@ -16,12 +28,116 @@ model Tenant {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  auditLogs AuditLog[]
+  auditLogs  AuditLog[]
+  staffUsers StaffUserTenant[]
 
   @@map("tenants")
 }
 
-/// Append-only audit trail (tenant-scoped with forced PostgreSQL RLS)
+/// Global SaaS staff users (dashboard & garita)
+model StaffUser {
+  id                  String    @id @db.Uuid
+  email               String    @unique
+  fullName            String    @map("full_name")
+  passwordHash        String?   @map("password_hash")
+  role                StaffRole
+  isActive            Boolean   @default(true) @map("is_active")
+  totpSecretEnc       String?   @map("totp_secret_enc")
+  totpEnabled         Boolean   @default(false) @map("totp_enabled")
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until") @db.Timestamptz
+  lastLoginAt         DateTime? @map("last_login_at") @db.Timestamptz
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenants       StaffUserTenant[]
+  sessions      StaffSession[]
+  tokens        StaffToken[]
+  recoveryCodes StaffRecoveryCode[]
+  authAudits    StaffAuthAudit[]
+
+  @@map("staff_users")
+}
+
+/// Many-to-many assignment of staff users to buildings
+model StaffUserTenant {
+  staffUserId String   @map("staff_user_id") @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([staffUserId, tenantId])
+  @@index([tenantId])
+  @@map("staff_user_tenants")
+}
+
+/// Active/revoked refresh token sessions with idle timeout tracking
+model StaffSession {
+  id               String    @id @db.Uuid
+  staffUserId      String    @map("staff_user_id") @db.Uuid
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz
+  lastActivityAt   DateTime  @default(now()) @map("last_activity_at") @db.Timestamptz
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz
+  userAgent        String?   @map("user_agent")
+  ipAddress        String?   @map("ip_address")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId])
+  @@map("staff_sessions")
+}
+
+/// Single-use invitation (72 h) and password reset (1 h) tokens
+model StaffToken {
+  id          String         @id @db.Uuid
+  staffUserId String         @map("staff_user_id") @db.Uuid
+  type        StaffTokenType
+  tokenHash   String         @unique @map("token_hash")
+  expiresAt   DateTime       @map("expires_at") @db.Timestamptz
+  usedAt      DateTime?      @map("used_at") @db.Timestamptz
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId])
+  @@map("staff_tokens")
+}
+
+/// Single-use 2FA recovery codes (hashed)
+model StaffRecoveryCode {
+  id          String    @id @db.Uuid
+  staffUserId String    @map("staff_user_id") @db.Uuid
+  codeHash    String    @map("code_hash")
+  usedAt      DateTime? @map("used_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId])
+  @@map("staff_recovery_codes")
+}
+
+/// Append-only SaaS authentication & staff management audit trail
+model StaffAuthAudit {
+  id          String   @id @db.Uuid
+  staffUserId String?  @map("staff_user_id") @db.Uuid
+  actorId     String?  @map("actor_id") @db.Uuid
+  action      String
+  ipAddress   String?  @map("ip_address")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  staffUser StaffUser? @relation(fields: [staffUserId], references: [id], onDelete: SetNull)
+
+  @@index([staffUserId, createdAt])
+  @@map("staff_auth_audits")
+}
+
+/// Append-only tenant-scoped audit trail (forced PostgreSQL RLS)
 model AuditLog {
   id        String   @id @db.Uuid
   tenantId  String   @map("tenant_id") @db.Uuid

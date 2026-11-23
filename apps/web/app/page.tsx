@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { StatusBadge } from '@noah/ui';
 
 export default function HomePage() {
@@ -16,9 +17,24 @@ export default function HomePage() {
           <StatusBadge status="OK" />
         </div>
         <p style={{ color: 'var(--color-text-muted)', fontSize: '14px', marginTop: '12px' }}>
-          Base técnica (Fase 0) operativa. Los módulos del dashboard administrativo se incorporan a
-          partir de la especificación 002.
+          Dashboard administrativo multi-edificio con autenticación 2FA TOTP y control por roles.
         </p>
+        <div style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
+          <Link
+            href="/login"
+            style={{
+              padding: '10px 16px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'var(--color-primary)',
+              color: '#ffffff',
+              textDecoration: 'none',
+              fontSize: '14px',
+              fontWeight: 600,
+            }}
+          >
+            Iniciar sesión
+          </Link>
+        </div>
       </section>
     </main>
   );

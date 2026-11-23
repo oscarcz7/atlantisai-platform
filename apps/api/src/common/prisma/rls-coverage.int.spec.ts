@@ -25,6 +25,9 @@ describe('Multi-tenant RLS schema coverage', () => {
   });
 
   it('verifies every table with tenant_id has forced RLS and an active policy', async () => {
+    // Global SaaS tables that map staff users to tenants before a tenant session exists
+    const globalSaasTables = new Set(['staff_user_tenants']);
+
     const rows = await prisma.$queryRaw<RlsCoverageRow[]>`
       SELECT
         c.table_name,
@@ -43,9 +46,10 @@ describe('Multi-tenant RLS schema coverage', () => {
       ORDER BY c.table_name;
     `;
 
-    expect(rows.length).toBeGreaterThan(0);
+    const tenantScopedRows = rows.filter((r) => !globalSaasTables.has(r.table_name));
+    expect(tenantScopedRows.length).toBeGreaterThan(0);
 
-    for (const row of rows) {
+    for (const row of tenantScopedRows) {
       expect(row.rls_enabled, `Table ${row.table_name} must have RLS enabled`).toBe(true);
       expect(row.rls_forced, `Table ${row.table_name} must have FORCE RLS`).toBe(true);
       expect(
