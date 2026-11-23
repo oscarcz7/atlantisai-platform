@@ -1,3 +1,7 @@
+export * from './types.js';
+export * from './timezone.js';
+export * from './evaluate-reservation.js';
+
 export interface ParkingOvertimeConfig {
   readonly freeMinutes: number;
   readonly overtimeFeeCentsPerHour: number;
@@ -5,7 +9,6 @@ export interface ParkingOvertimeConfig {
 
 /**
  * Pure helper (C04) calculating visitor parking overtime charge in USD cents.
- * Full reservation rules engine (R01-R10, C01-C03) is implemented in spec 005.
  */
 export function calculateParkingOvertime(
   checkIn: Date,
