@@ -15,7 +15,7 @@
     "test:e2e": "echo \"e2e tests start in Phase 1\"",
     "prisma": "prisma",
     "seed:admin": "tsx --env-file=../../.env src/scripts/seed-admin.ts",
-    "seed": "echo \"seed implemented in spec 003-configurador\""
+    "seed": "tsx --env-file=../../.env src/scripts/seed-noah.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

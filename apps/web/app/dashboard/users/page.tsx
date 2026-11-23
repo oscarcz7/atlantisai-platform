@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { StatusBadge } from '@noah/ui';
 import { ApiClientError, authApi, type StaffProfile } from '../../../lib/api/auth';
@@ -103,6 +104,9 @@ export default function StaffUsersPage() {
         </div>
 
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <Link href="/dashboard/config" style={{ fontSize: '14px', color: 'var(--color-primary)' }}>
+            Configurador
+          </Link>
           {me.tenants.length > 0 && (
             <label style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               Edificio:

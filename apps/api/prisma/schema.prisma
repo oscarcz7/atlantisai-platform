@@ -19,17 +19,47 @@ enum StaffTokenType {
   PASSWORD_RESET
 }
 
+enum AmenityMode {
+  SHARED
+  EXCLUSIVE
+  FREE_USE
+}
+
+enum AdvancePolicy {
+  GENERAL
+  SHORT_NOTICE_ALLOWED
+}
+
+enum OccupancyRole {
+  OWNER_RESIDENT
+  OWNER_LANDLORD
+  LONG_TERM_TENANT
+  AIRBNB_HOST
+  AIRBNB_GUEST
+}
+
 /// Global SaaS table (not tenant-scoped)
 model Tenant {
-  id        String   @id @db.Uuid
-  code      String   @unique
-  name      String
-  timezone  String   @default("America/Guayaquil")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  id           String   @id @db.Uuid
+  code         String   @unique
+  name         String
+  ruc          String?
+  logoUrl      String?  @map("logo_url")
+  timezone     String   @default("America/Guayaquil")
+  contacts     Json?
+  officeHours  Json?    @map("office_hours")
+  bankAccounts Json?    @map("bank_accounts")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  auditLogs  AuditLog[]
-  staffUsers StaffUserTenant[]
+  auditLogs      AuditLog[]
+  staffUsers     StaffUserTenant[]
+  settings       TenantSettings?
+  unitTypes      UnitType[]
+  amenities      Amenity[]
+  accessRules    AmenityAccessRule[]
+  cleaningCombos CleaningCombo[]
+  parkingConfig  ParkingConfig?
 
   @@map("tenants")
 }
@@ -156,4 +186,123 @@ model AuditLog {
   @@index([tenantId])
   @@index([tenantId, createdAt])
   @@map("audit_logs")
+}
+
+/// Building-level financial & operational parameters (RLS)
+model TenantSettings {
+  id                          String   @id @db.Uuid
+  tenantId                    String   @unique @map("tenant_id") @db.Uuid
+  depositRequiredCents        Int      @map("deposit_required_cents")
+  arrearsToleranceMonths      Int      @map("arrears_tolerance_months")
+  paymentProofDeadlineMinutes Int      @map("payment_proof_deadline_minutes")
+  extraGuestDeclaredCents     Int      @map("extra_guest_declared_cents")
+  extraGuestUndeclaredCents   Int      @map("extra_guest_undeclared_cents")
+  entryMarginMinutes          Int      @map("entry_margin_minutes")
+  generalAdvanceHours         Int      @map("general_advance_hours")
+  shortNoticeAdvanceMinutes   Int      @map("short_notice_advance_minutes")
+  frequencyWeekStart          String   @default("MONDAY") @map("frequency_week_start")
+  cancellationPolicy          Json?    @map("cancellation_policy")
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("tenant_settings")
+}
+
+/// Unit typology with included guest quota (RLS)
+model UnitType {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  code           String
+  name           String
+  includedGuests Int      @map("included_guests")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("unit_types")
+}
+
+/// Communal area catalog with rules (RLS)
+model Amenity {
+  id                 String        @id @db.Uuid
+  tenantId           String        @map("tenant_id") @db.Uuid
+  code               String
+  name               String
+  capacity           Int
+  maxDurationMinutes Int           @map("max_duration_minutes")
+  schedule           Json?
+  frequency          Json?
+  mode               AmenityMode
+  advancePolicy      AdvancePolicy @map("advance_policy")
+  appliesGuestQuota  Boolean       @default(false) @map("applies_guest_quota")
+  requiresDeposit    Boolean       @default(false) @map("requires_deposit")
+  cleaningFeeCents   Int           @default(0) @map("cleaning_fee_cents")
+  hasReader          Boolean       @default(false) @map("has_reader")
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accessRules AmenityAccessRule[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("amenities")
+}
+
+/// Access matrix: which OccupancyRole can use which Amenity (RLS)
+model AmenityAccessRule {
+  id            String        @id @db.Uuid
+  tenantId      String        @map("tenant_id") @db.Uuid
+  amenityId     String        @map("amenity_id") @db.Uuid
+  occupancyRole OccupancyRole @map("occupancy_role")
+  allowed       Boolean       @default(false)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  amenity Amenity @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, amenityId, occupancyRole])
+  @@index([tenantId])
+  @@map("amenity_access_rules")
+}
+
+/// Cleaning combos covering exact sets of amenities (RLS)
+model CleaningCombo {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  comboKey   String   @map("combo_key")
+  amenityIds String[] @map("amenity_ids") @db.Uuid
+  feeCents   Int      @map("fee_cents")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, comboKey])
+  @@index([tenantId])
+  @@map("cleaning_combos")
+}
+
+/// Visitor parking rules per building (RLS)
+model ParkingConfig {
+  id                      String   @id @db.Uuid
+  tenantId                String   @unique @map("tenant_id") @db.Uuid
+  spots                   Int
+  freeMinutes             Int      @map("free_minutes")
+  overtimeFeeCentsPerHour Int      @map("overtime_fee_cents_per_hour")
+  rounding                String   @default("CEIL_HOUR")
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("parking_configs")
 }
