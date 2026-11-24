@@ -242,6 +242,7 @@ model AuditLog {
 model TenantSettings {
   id                          String   @id @db.Uuid
   tenantId                    String   @unique @map("tenant_id") @db.Uuid
+  monthlyFeePerSqmCents       Int      @default(0) @map("monthly_fee_per_sqm_cents")
   depositRequiredCents        Int      @map("deposit_required_cents")
   arrearsToleranceMonths      Int      @map("arrears_tolerance_months")
   paymentProofDeadlineMinutes Int      @map("payment_proof_deadline_minutes")
@@ -267,6 +268,7 @@ model UnitType {
   tenantId       String   @map("tenant_id") @db.Uuid
   code           String
   name           String
+  bedrooms       Int      @default(1)
   includedGuests Int      @map("included_guests")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
@@ -366,6 +368,8 @@ model Unit {
   number          String
   floor           Int
   unitTypeId      String   @map("unit_type_id") @db.Uuid
+  areaSqm         Float?   @map("area_sqm")
+  bedrooms        Int      @default(1)
   monthlyFeeCents Int      @default(0) @map("monthly_fee_cents")
   isActive        Boolean  @default(true) @map("is_active")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz

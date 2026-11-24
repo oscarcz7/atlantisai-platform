@@ -1,7 +1,13 @@
 const API_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:4000';
 
+export interface CancellationPolicyDto {
+  minHoursBefore?: number;
+  cleaningFeeHandling?: 'NON_REFUNDABLE' | 'REFUNDABLE' | 'CREDIT';
+}
+
 export interface TenantSettingsDto {
   id: string;
+  monthlyFeePerSqmCents: number;
   depositRequiredCents: number;
   arrearsToleranceMonths: number;
   paymentProofDeadlineMinutes: number;
@@ -11,12 +17,14 @@ export interface TenantSettingsDto {
   generalAdvanceHours: number;
   shortNoticeAdvanceMinutes: number;
   frequencyWeekStart: string;
+  cancellationPolicy?: CancellationPolicyDto | null;
 }
 
 export interface UnitTypeDto {
   id: string;
   code: string;
   name: string;
+  bedrooms: number;
   includedGuests: number;
 }
 
@@ -27,12 +35,24 @@ export interface AccessRuleDto {
   allowed: boolean;
 }
 
+export interface AmenityScheduleDto {
+  all?: { open: string; close: string };
+  [day: string]: { open: string; close: string } | undefined;
+}
+
+export interface AmenityFrequencyDto {
+  period: 'DAY' | 'WEEK' | 'MONTH';
+  max: number;
+}
+
 export interface AmenityDto {
   id: string;
   code: string;
   name: string;
   capacity: number;
   maxDurationMinutes: number;
+  schedule: AmenityScheduleDto | null;
+  frequency: AmenityFrequencyDto | null;
   mode: 'SHARED' | 'EXCLUSIVE' | 'FREE_USE';
   advancePolicy: 'GENERAL' | 'SHORT_NOTICE_ALLOWED';
   appliesGuestQuota: boolean;
@@ -40,6 +60,21 @@ export interface AmenityDto {
   cleaningFeeCents: number;
   hasReader: boolean;
   accessRules: AccessRuleDto[];
+}
+
+export interface UpsertAmenityPayload {
+  code: string;
+  name: string;
+  capacity: number;
+  maxDurationMinutes: number;
+  schedule?: AmenityScheduleDto | null;
+  frequency?: AmenityFrequencyDto | null;
+  mode: 'SHARED' | 'EXCLUSIVE' | 'FREE_USE';
+  advancePolicy: 'GENERAL' | 'SHORT_NOTICE_ALLOWED';
+  appliesGuestQuota: boolean;
+  requiresDeposit: boolean;
+  cleaningFeeCents: number;
+  hasReader: boolean;
 }
 
 export interface CleaningComboDto {
@@ -87,8 +122,19 @@ export const catalogApi = {
     catalogFetch<TenantSettingsDto>('/catalog/settings', token, tenantId, { method: 'PUT', body }),
   listUnitTypes: (token: string, tenantId: string) =>
     catalogFetch<UnitTypeDto[]>('/catalog/unit-types', token, tenantId),
+  upsertUnitType: (
+    token: string,
+    tenantId: string,
+    body: { code: string; name: string; bedrooms: number; includedGuests: number },
+  ) => catalogFetch<UnitTypeDto>('/catalog/unit-types', token, tenantId, { method: 'POST', body }),
+  deleteUnitType: (token: string, tenantId: string, id: string) =>
+    catalogFetch<{ deleted: boolean }>(`/catalog/unit-types/${id}`, token, tenantId, { method: 'DELETE' }),
   listAmenities: (token: string, tenantId: string) =>
     catalogFetch<AmenityDto[]>('/catalog/amenities', token, tenantId),
+  upsertAmenity: (token: string, tenantId: string, body: UpsertAmenityPayload) =>
+    catalogFetch<AmenityDto>('/catalog/amenities', token, tenantId, { method: 'POST', body }),
+  deleteAmenity: (token: string, tenantId: string, id: string) =>
+    catalogFetch<{ deleted: boolean }>(`/catalog/amenities/${id}`, token, tenantId, { method: 'DELETE' }),
   setAccessRule: (
     token: string,
     tenantId: string,
@@ -96,6 +142,15 @@ export const catalogApi = {
   ) => catalogFetch<AccessRuleDto>('/catalog/access-matrix', token, tenantId, { method: 'PUT', body }),
   listCombos: (token: string, tenantId: string) =>
     catalogFetch<CleaningComboDto[]>('/catalog/cleaning-combos', token, tenantId),
+  createCombo: (token: string, tenantId: string, body: { amenityIds: string[]; feeCents: number }) =>
+    catalogFetch<CleaningComboDto>('/catalog/cleaning-combos', token, tenantId, { method: 'POST', body }),
+  deleteCombo: (token: string, tenantId: string, id: string) =>
+    catalogFetch<{ deleted: boolean }>(`/catalog/cleaning-combos/${id}`, token, tenantId, { method: 'DELETE' }),
   getParking: (token: string, tenantId: string) =>
     catalogFetch<ParkingConfigDto | null>('/catalog/parking', token, tenantId),
+  saveParking: (
+    token: string,
+    tenantId: string,
+    body: { spots: number; freeMinutes: number; overtimeFeeCentsPerHour: number; rounding?: string },
+  ) => catalogFetch<ParkingConfigDto>('/catalog/parking', token, tenantId, { method: 'PUT', body }),
 };

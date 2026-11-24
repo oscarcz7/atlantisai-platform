@@ -6,6 +6,7 @@ import {
   Get,
   Inject,
   Param,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { type OccupancyRole, type TenantContext } from '@noah/domain';
@@ -42,9 +43,36 @@ export class CadastreController {
   @Post('units')
   createUnit(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body() body: { number: string; floor: number; unitTypeId: string; monthlyFeeCents: number },
+    @Body()
+    body: {
+      number: string;
+      floor: number;
+      unitTypeId: string;
+      areaSqm?: number | null;
+      bedrooms?: number;
+      monthlyFeeCents?: number;
+    },
   ) {
     return this.cadastreService.createUnit(requireTenant(ctx), body);
+  }
+
+  @Roles('SUPERADMIN', 'ADMIN')
+  @Patch('units/:id')
+  updateUnit(
+    @CurrentTenant() ctx: TenantContext | undefined,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      number?: string;
+      floor?: number;
+      unitTypeId?: string;
+      areaSqm?: number | null;
+      bedrooms?: number;
+      monthlyFeeCents?: number;
+      isActive?: boolean;
+    },
+  ) {
+    return this.cadastreService.updateUnit(requireTenant(ctx), id, body);
   }
 
   @Roles('SUPERADMIN', 'ADMIN')

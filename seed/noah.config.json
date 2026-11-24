@@ -29,6 +29,7 @@
     }
   },
   "settings": {
+    "monthlyFeePerSqmCents": 300,
     "depositRequiredCents": 20000,
     "arrearsToleranceMonths": 2,
     "paymentProofDeadlineMinutes": 240,
@@ -53,16 +54,19 @@
     {
       "code": "STUDIO",
       "name": "Estudio (1 dormitorio)",
+      "bedrooms": 1,
       "includedGuests": 2
     },
     {
       "code": "SUITE",
       "name": "Suite (2 dormitorios)",
+      "bedrooms": 2,
       "includedGuests": 3
     },
     {
       "code": "APARTMENT",
       "name": "Departamento (3 dormitorios)",
+      "bedrooms": 3,
       "includedGuests": 5
     }
   ],

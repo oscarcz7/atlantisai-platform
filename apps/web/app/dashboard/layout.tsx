@@ -20,12 +20,13 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard/reservations', label: 'Reservas', roles: ['SUPERADMIN', 'ADMIN', 'GUARD'] },
+  { href: '/dashboard/buildings', label: 'Edificios', roles: ['SUPERADMIN', 'ADMIN'] },
+  { href: '/dashboard/config', label: 'Configurador', roles: ['SUPERADMIN', 'ADMIN'] },
   { href: '/dashboard/cadastre', label: 'Catastro', roles: ['SUPERADMIN', 'ADMIN', 'ACCOUNTANT'] },
+  { href: '/dashboard/reservations', label: 'Reservas', roles: ['SUPERADMIN', 'ADMIN', 'GUARD'] },
   { href: '/dashboard/billing', label: 'Finanzas y Bandeja', roles: ['SUPERADMIN', 'ADMIN', 'ACCOUNTANT'] },
   { href: '/dashboard/garita', label: 'Consola de Garita', roles: ['SUPERADMIN', 'ADMIN', 'GUARD'] },
   { href: '/dashboard/incidents', label: 'Incidencias', roles: ['SUPERADMIN', 'ADMIN', 'GUARD'] },
-  { href: '/dashboard/config', label: 'Configurador', roles: ['SUPERADMIN', 'ADMIN'] },
   { href: '/dashboard/users', label: 'Usuarios internos', roles: ['SUPERADMIN'] },
   { href: '/dashboard/audit', label: 'Auditoría y Reportes', roles: ['SUPERADMIN', 'ADMIN', 'ACCOUNTANT'] },
 ];

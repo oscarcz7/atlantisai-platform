@@ -9,12 +9,16 @@ interface UnitTypeRow {
   id: string;
   code: string;
   name: string;
+  bedrooms: number;
 }
 
 interface UnitRow {
   id: string;
   number: string;
   floor: number;
+  unitTypeId: string;
+  areaSqm: number | null;
+  bedrooms: number;
   monthlyFeeCents: number;
   isActive: boolean;
   unitType: { name: string };
@@ -30,13 +34,29 @@ interface PersonRow {
   isActive: boolean;
 }
 
+interface SettingsSnippet {
+  monthlyFeePerSqmCents: number;
+}
+
+const inputStyle = {
+  padding: '9px 12px',
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid var(--color-border)',
+  backgroundColor: 'var(--color-bg)',
+  color: 'var(--color-text)',
+  fontSize: '14px',
+  width: '100%',
+} as const;
+
 export default function CadastrePage() {
   const { me, tenantId, apiFetch } = useDashboard();
   const [tab, setTab] = useState<'units' | 'persons'>('units');
   const [units, setUnits] = useState<UnitRow[]>([]);
   const [persons, setPersons] = useState<PersonRow[]>([]);
   const [unitTypes, setUnitTypes] = useState<UnitTypeRow[]>([]);
+  const [feePerSqmCents, setFeePerSqmCents] = useState(0);
   const [drawer, setDrawer] = useState<'unit' | 'person' | 'occupancy' | null>(null);
+  const [editingUnit, setEditingUnit] = useState<UnitRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -44,7 +64,10 @@ export default function CadastrePage() {
   const [uNumber, setUNumber] = useState('');
   const [uFloor, setUFloor] = useState('1');
   const [uTypeId, setUTypeId] = useState('');
-  const [uFeeUsd, setUFeeUsd] = useState('120');
+  const [uBedrooms, setUBedrooms] = useState('1');
+  const [uAreaSqm, setUAreaSqm] = useState('');
+  const [uManualFee, setUManualFee] = useState(false);
+  const [uFeeUsd, setUFeeUsd] = useState('0.00');
 
   // Person form
   const [pName, setPName] = useState('');
@@ -63,15 +86,20 @@ export default function CadastrePage() {
 
   const loadData = useCallback(async () => {
     if (!tenantId) return;
-    const [u, p, ut] = await Promise.all([
+    const [u, p, ut, settings] = await Promise.all([
       apiFetch<UnitRow[]>('/cadastre/units'),
       apiFetch<PersonRow[]>('/cadastre/persons'),
       apiFetch<UnitTypeRow[]>('/catalog/unit-types'),
+      apiFetch<SettingsSnippet | null>('/catalog/settings'),
     ]);
     setUnits(u);
     setPersons(p);
     setUnitTypes(ut);
-    if (!uTypeId && ut[0]) setUTypeId(ut[0].id);
+    setFeePerSqmCents(settings?.monthlyFeePerSqmCents ?? 0);
+    if (!uTypeId && ut[0]) {
+      setUTypeId(ut[0].id);
+      setUBedrooms(String(ut[0].bedrooms ?? 1));
+    }
     if (!oUnitId && u[0]) setOUnitId(u[0].id);
     if (!oPersonId && p[0]) setOPersonId(p[0].id);
   }, [apiFetch, tenantId, uTypeId, oUnitId, oPersonId]);
@@ -80,25 +108,81 @@ export default function CadastrePage() {
     void loadData();
   }, [loadData]);
 
-  async function handleCreateUnit(e: FormEvent) {
+  const parsedArea = uAreaSqm.trim() !== '' ? Number(uAreaSqm) : null;
+  const computedFeeCents =
+    parsedArea !== null && Number.isFinite(parsedArea) && parsedArea > 0 && feePerSqmCents > 0
+      ? Math.round(parsedArea * feePerSqmCents)
+      : 0;
+
+  function openCreateUnit() {
+    setError(null);
+    setEditingUnit(null);
+    setUNumber('');
+    setUFloor('1');
+    const firstType = unitTypes[0];
+    setUTypeId(firstType?.id ?? '');
+    setUBedrooms(String(firstType?.bedrooms ?? 1));
+    setUAreaSqm('');
+    setUManualFee(feePerSqmCents === 0);
+    setUFeeUsd('0.00');
+    setDrawer('unit');
+  }
+
+  function openEditUnit(u: UnitRow) {
+    setError(null);
+    setEditingUnit(u);
+    setUNumber(u.number);
+    setUFloor(String(u.floor));
+    setUTypeId(u.unitTypeId);
+    setUBedrooms(String(u.bedrooms ?? 1));
+    setUAreaSqm(u.areaSqm !== null && u.areaSqm !== undefined ? String(u.areaSqm) : '');
+    const autoExpected =
+      u.areaSqm && feePerSqmCents > 0 ? Math.round(u.areaSqm * feePerSqmCents) : null;
+    const isManual = autoExpected === null || autoExpected !== u.monthlyFeeCents;
+    setUManualFee(isManual);
+    setUFeeUsd((u.monthlyFeeCents / 100).toFixed(2));
+    setDrawer('unit');
+  }
+
+  function handleTypeChange(nextTypeId: string) {
+    setUTypeId(nextTypeId);
+    const found = unitTypes.find((ut) => ut.id === nextTypeId);
+    if (found) {
+      setUBedrooms(String(found.bedrooms ?? 1));
+    }
+  }
+
+  async function handleSaveUnit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    const areaSqm = uAreaSqm.trim() !== '' ? Number(uAreaSqm) : null;
+    const payload = {
+      number: uNumber,
+      floor: Number(uFloor),
+      unitTypeId: uTypeId,
+      bedrooms: Number(uBedrooms),
+      areaSqm,
+      ...(uManualFee ? { monthlyFeeCents: Math.round(Number(uFeeUsd) * 100) } : {}),
+    };
     try {
-      await apiFetch('/cadastre/units', {
-        method: 'POST',
-        body: {
-          number: uNumber,
-          floor: Number(uFloor),
-          unitTypeId: uTypeId,
-          monthlyFeeCents: Math.round(Number(uFeeUsd) * 100),
-        },
-      });
-      setUNumber('');
+      if (editingUnit) {
+        await apiFetch(`/cadastre/units/${editingUnit.id}`, {
+          method: 'PATCH',
+          body: payload,
+        });
+        setToast(`Unidad ${uNumber} actualizada.`);
+      } else {
+        await apiFetch('/cadastre/units', {
+          method: 'POST',
+          body: payload,
+        });
+        setToast(`Unidad ${uNumber} creada correctamente.`);
+      }
+      setEditingUnit(null);
       setDrawer(null);
-      setToast('Unidad creada correctamente.');
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al crear unidad.');
+      setError(err instanceof Error ? err.message : 'Error al guardar unidad.');
     }
   }
 
@@ -151,21 +235,33 @@ export default function CadastrePage() {
 
   return (
     <section>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h1 style={{ margin: 0, fontSize: '22px' }}>Catastro y ocupaciones</h1>
           <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--color-text-muted)' }}>
-            Unidades, residentes (cédula cifrada y WhatsApp E.164) y vigencias de ocupación.
+            Unidades (metraje, dormitorios y alícuota automática a{' '}
+            <strong>
+              <Money cents={feePerSqmCents} />/m²
+            </strong>
+            ), residentes y ocupaciones.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
             type="button"
             onClick={() =>
               downloadCsv(
                 'catastro-unidades.csv',
-                ['Unidad', 'Piso', 'Tipología', 'Alícuota USD', 'Estado'],
-                units.map((u) => [u.number, u.floor, u.unitType.name, (u.monthlyFeeCents / 100).toFixed(2), u.isActive ? 'Activa' : 'Inactiva']),
+                ['Unidad', 'Piso', 'Tipología', 'Dormitorios', 'Metraje m2', 'Alícuota USD', 'Estado'],
+                units.map((u) => [
+                  u.number,
+                  u.floor,
+                  u.unitType.name,
+                  u.bedrooms ?? 1,
+                  u.areaSqm ?? '',
+                  (u.monthlyFeeCents / 100).toFixed(2),
+                  u.isActive ? 'Activa' : 'Inactiva',
+                ]),
               )
             }
             style={{
@@ -184,7 +280,7 @@ export default function CadastrePage() {
             <>
               <button
                 type="button"
-                onClick={() => { setError(null); setDrawer('unit'); }}
+                onClick={openCreateUnit}
                 style={{
                   padding: '8px 12px',
                   borderRadius: 'var(--radius-sm)',
@@ -200,7 +296,10 @@ export default function CadastrePage() {
               </button>
               <button
                 type="button"
-                onClick={() => { setError(null); setDrawer('person'); }}
+                onClick={() => {
+                  setError(null);
+                  setDrawer('person');
+                }}
                 style={{
                   padding: '8px 12px',
                   borderRadius: 'var(--radius-sm)',
@@ -216,7 +315,10 @@ export default function CadastrePage() {
               </button>
               <button
                 type="button"
-                onClick={() => { setError(null); setDrawer('occupancy'); }}
+                onClick={() => {
+                  setError(null);
+                  setDrawer('occupancy');
+                }}
                 style={{
                   padding: '8px 12px',
                   borderRadius: 'var(--radius-sm)',
@@ -277,32 +379,58 @@ export default function CadastrePage() {
         units.length === 0 ? (
           <p style={{ color: 'var(--color-text-muted)' }}>Aún no hay unidades registradas. Crea la primera con «+ Unidad».</p>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)' }}>
-            <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-                <th style={{ padding: '12px' }}>Unidad</th>
-                <th style={{ padding: '12px' }}>Piso</th>
-                <th style={{ padding: '12px' }}>Tipología</th>
-                <th style={{ padding: '12px' }}>Alícuota</th>
-                <th style={{ padding: '12px' }}>Ocupantes</th>
-                <th style={{ padding: '12px' }}>Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {units.map((u) => (
-                <tr key={u.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                  <td style={{ padding: '12px', fontWeight: 600 }}>{u.number}</td>
-                  <td style={{ padding: '12px' }}>{u.floor}</td>
-                  <td style={{ padding: '12px' }}>{u.unitType.name}</td>
-                  <td style={{ padding: '12px' }}><Money cents={u.monthlyFeeCents} /></td>
-                  <td style={{ padding: '12px', fontSize: '13px' }}>
-                    {u.occupancies.length > 0 ? u.occupancies.map((o) => `${o.person.fullName} (${o.role})`).join(', ') : '—'}
-                  </td>
-                  <td style={{ padding: '12px' }}><StatusBadge status={u.isActive ? 'OK' : 'CANCELLED'} /></td>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
+                  <th style={{ padding: '12px' }}>Unidad</th>
+                  <th style={{ padding: '12px' }}>Piso</th>
+                  <th style={{ padding: '12px' }}>Tipología</th>
+                  <th style={{ padding: '12px' }}>Dorm.</th>
+                  <th style={{ padding: '12px' }}>Metraje</th>
+                  <th style={{ padding: '12px' }}>Alícuota</th>
+                  <th style={{ padding: '12px' }}>Ocupantes</th>
+                  <th style={{ padding: '12px' }}>Estado</th>
+                  {canEdit && <th style={{ padding: '12px', textAlign: 'right' }}>Acciones</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {units.map((u) => (
+                  <tr key={u.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                    <td style={{ padding: '12px', fontWeight: 600 }}>{u.number}</td>
+                    <td style={{ padding: '12px' }}>{u.floor}</td>
+                    <td style={{ padding: '12px' }}>{u.unitType.name}</td>
+                    <td style={{ padding: '12px' }}>{u.bedrooms ?? 1}</td>
+                    <td style={{ padding: '12px' }}>{u.areaSqm ? `${u.areaSqm} m²` : '—'}</td>
+                    <td style={{ padding: '12px' }}><Money cents={u.monthlyFeeCents} /></td>
+                    <td style={{ padding: '12px', fontSize: '13px' }}>
+                      {u.occupancies.length > 0 ? u.occupancies.map((o) => `${o.person.fullName} (${o.role})`).join(', ') : '—'}
+                    </td>
+                    <td style={{ padding: '12px' }}><StatusBadge status={u.isActive ? 'OK' : 'CANCELLED'} /></td>
+                    {canEdit && (
+                      <td style={{ padding: '12px', textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          onClick={() => openEditUnit(u)}
+                          style={{
+                            padding: '6px 10px',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--color-border)',
+                            backgroundColor: 'var(--color-bg)',
+                            color: 'var(--color-text)',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                          }}
+                        >
+                          Editar
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )
       ) : persons.length === 0 ? (
         <p style={{ color: 'var(--color-text-muted)' }}>Aún no hay personas registradas.</p>
@@ -336,17 +464,25 @@ export default function CadastrePage() {
             top: 0,
             right: 0,
             bottom: 0,
-            width: '400px',
+            width: '430px',
+            maxWidth: '100%',
             backgroundColor: 'var(--color-surface)',
             borderLeft: '1px solid var(--color-border)',
             padding: '24px',
             boxShadow: '-4px 0 24px rgba(0,0,0,0.14)',
             overflowY: 'auto',
+            zIndex: 50,
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h2 style={{ margin: 0, fontSize: '18px' }}>
-              {drawer === 'unit' ? 'Nueva unidad' : drawer === 'person' ? 'Nueva persona' : 'Vincular ocupación'}
+              {drawer === 'unit'
+                ? editingUnit
+                  ? `Editar unidad ${editingUnit.number}`
+                  : 'Nueva unidad'
+                : drawer === 'person'
+                  ? 'Nueva persona'
+                  : 'Vincular ocupación'}
             </h2>
             <button type="button" onClick={() => setDrawer(null)}>✕</button>
           </div>
@@ -354,50 +490,106 @@ export default function CadastrePage() {
           {error && <div style={{ color: 'var(--color-danger)', fontSize: '13px', marginBottom: '12px' }}>{error}</div>}
 
           {drawer === 'unit' && (
-            <form onSubmit={handleCreateUnit} style={{ display: 'grid', gap: '12px' }}>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-                Número de unidad (ej. 402)
-                <input required value={uNumber} onChange={(e) => setUNumber(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
-              </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-                Piso
-                <input type="number" required value={uFloor} onChange={(e) => setUFloor(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
-              </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
+            <form onSubmit={handleSaveUnit} style={{ display: 'grid', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
+                  Número de unidad (ej. 402)
+                  <input required value={uNumber} onChange={(e) => setUNumber(e.target.value)} style={inputStyle} />
+                </label>
+                <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
+                  Piso
+                  <input type="number" required value={uFloor} onChange={(e) => setUFloor(e.target.value)} style={inputStyle} />
+                </label>
+              </div>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
                 Tipología
-                <select value={uTypeId} onChange={(e) => setUTypeId(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }}>
+                <select value={uTypeId} onChange={(e) => handleTypeChange(e.target.value)} style={inputStyle}>
                   {unitTypes.map((ut) => (
-                    <option key={ut.id} value={ut.id}>{ut.name}</option>
+                    <option key={ut.id} value={ut.id}>
+                      {ut.name}
+                    </option>
                   ))}
                 </select>
               </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-                Alícuota mensual (USD)
-                <input type="number" step="0.01" required value={uFeeUsd} onChange={(e) => setUFeeUsd(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
+                  Dormitorios
+                  <input type="number" min="0" required value={uBedrooms} onChange={(e) => setUBedrooms(e.target.value)} style={inputStyle} />
+                </label>
+                <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
+                  Metraje (m²)
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="ej. 68.50"
+                    value={uAreaSqm}
+                    onChange={(e) => setUAreaSqm(e.target.value)}
+                    style={inputStyle}
+                  />
+                </label>
+              </div>
+
+              <div
+                style={{
+                  padding: '12px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--color-border)',
+                  backgroundColor: 'var(--color-bg)',
+                  fontSize: '13px',
+                }}
+              >
+                <div style={{ color: 'var(--color-text-muted)', marginBottom: '4px' }}>
+                  Cálculo automático de alícuota (<Money cents={feePerSqmCents} /> / m²):
+                </div>
+                <div style={{ fontSize: '16px', fontWeight: 700 }}>
+                  {parsedArea && feePerSqmCents > 0 ? (
+                    <>
+                      {parsedArea} m² × <Money cents={feePerSqmCents} /> = <Money cents={computedFeeCents} /> / mes
+                    </>
+                  ) : (
+                    <span style={{ fontSize: '13px', fontWeight: 400, color: 'var(--color-text-muted)' }}>
+                      Ingresa el metraje (o configura el precio/m² en Configurador → Parámetros).
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                <input type="checkbox" checked={uManualFee} onChange={(e) => setUManualFee(e.target.checked)} />
+                Definir alícuota manualmente (sobrescribir cálculo por m²)
               </label>
+
+              {uManualFee && (
+                <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
+                  Alícuota mensual manual (USD)
+                  <input type="number" step="0.01" min="0" required value={uFeeUsd} onChange={(e) => setUFeeUsd(e.target.value)} style={inputStyle} />
+                </label>
+              )}
+
               <button type="submit" style={{ padding: '10px', backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 600, cursor: 'pointer' }}>
-                Guardar unidad
+                {editingUnit ? 'Guardar cambios' : 'Guardar unidad'}
               </button>
             </form>
           )}
 
           {drawer === 'person' && (
             <form onSubmit={handleCreatePerson} style={{ display: 'grid', gap: '12px' }}>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
                 Nombre completo
-                <input required value={pName} onChange={(e) => setPName(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
+                <input required value={pName} onChange={(e) => setPName(e.target.value)} style={inputStyle} />
               </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
                 Cédula o pasaporte (se guarda cifrada)
-                <input required value={pNationalId} onChange={(e) => setPNationalId(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
+                <input required value={pNationalId} onChange={(e) => setPNationalId(e.target.value)} style={inputStyle} />
               </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
                 Teléfono WhatsApp (ej. 0984555922)
-                <input required value={pPhone} onChange={(e) => setPPhone(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
+                <input required value={pPhone} onChange={(e) => setPPhone(e.target.value)} style={inputStyle} />
               </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
                 Correo electrónico (opcional)
-                <input type="email" value={pEmail} onChange={(e) => setPEmail(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
+                <input type="email" value={pEmail} onChange={(e) => setPEmail(e.target.value)} style={inputStyle} />
               </label>
               <button type="submit" style={{ padding: '10px', backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 600, cursor: 'pointer' }}>
                 Guardar persona
@@ -407,21 +599,29 @@ export default function CadastrePage() {
 
           {drawer === 'occupancy' && (
             <form onSubmit={handleCreateOccupancy} style={{ display: 'grid', gap: '12px' }}>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
                 Unidad
-                <select value={oUnitId} onChange={(e) => setOUnitId(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }}>
-                  {units.map((u) => <option key={u.id} value={u.id}>Depto. {u.number}</option>)}
+                <select value={oUnitId} onChange={(e) => setOUnitId(e.target.value)} style={inputStyle}>
+                  {units.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      Depto. {u.number}
+                    </option>
+                  ))}
                 </select>
               </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
                 Persona
-                <select value={oPersonId} onChange={(e) => setOPersonId(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }}>
-                  {persons.map((p) => <option key={p.id} value={p.id}>{p.fullName} ({p.waPhone})</option>)}
+                <select value={oPersonId} onChange={(e) => setOPersonId(e.target.value)} style={inputStyle}>
+                  {persons.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.fullName} ({p.waPhone})
+                    </option>
+                  ))}
                 </select>
               </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
                 Rol de ocupación
-                <select value={oRole} onChange={(e) => setORole(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }}>
+                <select value={oRole} onChange={(e) => setORole(e.target.value)} style={inputStyle}>
                   <option value="OWNER_RESIDENT">Propietario residente</option>
                   <option value="LONG_TERM_TENANT">Arrendatario fijo</option>
                   <option value="OWNER_LANDLORD">Propietario arrendador</option>
@@ -429,13 +629,13 @@ export default function CadastrePage() {
                   <option value="AIRBNB_GUEST">Huésped Airbnb</option>
                 </select>
               </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
                 Vigente desde
-                <input type="date" required value={oValidFrom} onChange={(e) => setOValidFrom(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
+                <input type="date" required value={oValidFrom} onChange={(e) => setOValidFrom(e.target.value)} style={inputStyle} />
               </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
+              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
                 Vigente hasta (opcional)
-                <input type="date" value={oValidTo} onChange={(e) => setOValidTo(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
+                <input type="date" value={oValidTo} onChange={(e) => setOValidTo(e.target.value)} style={inputStyle} />
               </label>
               <button type="submit" style={{ padding: '10px', backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 600, cursor: 'pointer' }}>
                 Guardar ocupación

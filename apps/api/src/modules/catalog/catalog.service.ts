@@ -10,6 +10,7 @@ import {
 } from './catalog.validation.js';
 
 export interface UpsertSettingsInput {
+  monthlyFeePerSqmCents?: number;
   depositRequiredCents: number;
   arrearsToleranceMonths: number;
   paymentProofDeadlineMinutes: number;
@@ -73,7 +74,9 @@ export class CatalogService {
   }
 
   async upsertSettings(ctx: TenantContext, input: UpsertSettingsInput) {
+    const monthlyFeePerSqmCents = input.monthlyFeePerSqmCents ?? 0;
     if (
+      monthlyFeePerSqmCents < 0 ||
       input.depositRequiredCents < 0 ||
       input.arrearsToleranceMonths < 0 ||
       input.paymentProofDeadlineMinutes <= 0
@@ -84,6 +87,7 @@ export class CatalogService {
     return this.prisma.withTenant(ctx, async (tx) => {
       const before = await tx.tenantSettings.findUnique({ where: { tenantId: ctx.tenantId } });
       const data = {
+        monthlyFeePerSqmCents,
         depositRequiredCents: input.depositRequiredCents,
         arrearsToleranceMonths: input.arrearsToleranceMonths,
         paymentProofDeadlineMinutes: input.paymentProofDeadlineMinutes,
@@ -117,10 +121,14 @@ export class CatalogService {
 
   async upsertUnitType(
     ctx: TenantContext,
-    input: { code: string; name: string; includedGuests: number },
+    input: { code: string; name: string; bedrooms?: number; includedGuests: number },
   ) {
+    const bedrooms = input.bedrooms ?? 1;
     if (!Number.isInteger(input.includedGuests) || input.includedGuests < 0) {
       throw new DomainError('INVALID_UNIT_TYPE', 'Los invitados incluidos deben ser >= 0.', 422);
+    }
+    if (!Number.isInteger(bedrooms) || bedrooms < 0) {
+      throw new DomainError('INVALID_UNIT_TYPE', 'Los dormitorios deben ser >= 0.', 422);
     }
     const code = input.code.trim().toUpperCase();
     return this.prisma.withTenant(ctx, async (tx) => {
@@ -130,7 +138,7 @@ export class CatalogService {
       const saved = before
         ? await tx.unitType.update({
             where: { id: before.id },
-            data: { name: input.name.trim(), includedGuests: input.includedGuests },
+            data: { name: input.name.trim(), bedrooms, includedGuests: input.includedGuests },
           })
         : await tx.unitType.create({
             data: {
@@ -138,12 +146,33 @@ export class CatalogService {
               tenantId: ctx.tenantId,
               code,
               name: input.name.trim(),
+              bedrooms,
               includedGuests: input.includedGuests,
             },
           });
 
       await this.recordAudit(tx, ctx, 'UNIT_TYPE_SAVED', 'UnitType', saved.id, before, saved);
       return saved;
+    });
+  }
+
+  async deleteUnitType(ctx: TenantContext, id: string) {
+    return this.prisma.withTenant(ctx, async (tx) => {
+      const existing = await tx.unitType.findFirst({ where: { id, tenantId: ctx.tenantId } });
+      if (!existing) {
+        throw new DomainError('UNIT_TYPE_NOT_FOUND', 'Tipología no encontrada.', 404);
+      }
+      const inUse = await tx.unit.count({ where: { tenantId: ctx.tenantId, unitTypeId: id } });
+      if (inUse > 0) {
+        throw new DomainError(
+          'UNIT_TYPE_IN_USE',
+          `No se puede eliminar porque ${inUse} unidad(es) usan esta tipología.`,
+          409,
+        );
+      }
+      await tx.unitType.delete({ where: { id } });
+      await this.recordAudit(tx, ctx, 'UNIT_TYPE_DELETED', 'UnitType', id, existing, null);
+      return { deleted: true };
     });
   }
 
@@ -193,6 +222,29 @@ export class CatalogService {
 
       await this.recordAudit(tx, ctx, 'AMENITY_SAVED', 'Amenity', saved.id, before, saved);
       return saved;
+    });
+  }
+
+  async deleteAmenity(ctx: TenantContext, id: string) {
+    return this.prisma.withTenant(ctx, async (tx) => {
+      const existing = await tx.amenity.findFirst({ where: { id, tenantId: ctx.tenantId } });
+      if (!existing) {
+        throw new DomainError('AMENITY_NOT_FOUND', 'Área comunal no encontrada.', 404);
+      }
+      const inReservations = await tx.reservationAmenity.count({
+        where: { tenantId: ctx.tenantId, amenityId: id },
+      });
+      if (inReservations > 0) {
+        throw new DomainError(
+          'AMENITY_IN_USE',
+          `No se puede eliminar porque tiene ${inReservations} reserva(s) asociada(s).`,
+          409,
+        );
+      }
+      await tx.amenityAccessRule.deleteMany({ where: { tenantId: ctx.tenantId, amenityId: id } });
+      await tx.amenity.delete({ where: { id } });
+      await this.recordAudit(tx, ctx, 'AMENITY_DELETED', 'Amenity', id, existing, null);
+      return { deleted: true };
     });
   }
 

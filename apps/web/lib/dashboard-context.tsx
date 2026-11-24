@@ -11,6 +11,7 @@ export interface DashboardContextValue {
   me: StaffProfile;
   tenantId: string;
   setTenantId: (id: string) => void;
+  refreshMe: () => Promise<void>;
   apiFetch: <T>(path: string, options?: { method?: string; body?: unknown; headers?: Record<string, string> }) => Promise<T>;
   logout: () => Promise<void>;
 }
@@ -59,6 +60,15 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     sessionStorage.setItem('noah_tenant_id', id);
   }
 
+  async function refreshMe() {
+    if (!token) return;
+    const profile = await authApi.me(token);
+    setMe(profile);
+    if (!profile.tenants.some((t) => t.id === tenantId) && profile.tenants[0]) {
+      setTenantId(profile.tenants[0].id);
+    }
+  }
+
   async function apiFetch<T>(
     path: string,
     options: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
@@ -100,7 +110,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <DashboardContext.Provider value={{ token, me, tenantId, setTenantId, apiFetch, logout }}>
+    <DashboardContext.Provider value={{ token, me, tenantId, setTenantId, refreshMe, apiFetch, logout }}>
       {children}
     </DashboardContext.Provider>
   );

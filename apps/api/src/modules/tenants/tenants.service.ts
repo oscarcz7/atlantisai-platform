@@ -25,6 +25,7 @@ export interface BuildingConfigImportJson {
     bankAccounts?: Array<Record<string, unknown>>;
   };
   settings: {
+    monthlyFeePerSqmCents?: number;
     depositRequiredCents: number;
     arrearsToleranceMonths: number;
     paymentProofDeadlineMinutes: number;
@@ -36,7 +37,7 @@ export interface BuildingConfigImportJson {
     frequencyWeekStart?: string;
     cancellationPolicy?: Record<string, unknown>;
   };
-  unitTypes: Array<{ code: string; name: string; includedGuests: number }>;
+  unitTypes: Array<{ code: string; name: string; bedrooms?: number; includedGuests: number }>;
   amenities: Array<{
     code: string;
     name: string;
@@ -91,7 +92,7 @@ export class TenantsService {
       throw new DomainError('TENANT_CODE_EXISTS', 'Ya existe un edificio con ese código.', 409);
     }
 
-    return this.prisma.tenant.create({
+    const created = await this.prisma.tenant.create({
       data: {
         id: generateUuidV7(),
         code,
@@ -104,6 +105,45 @@ export class TenantsService {
         bankAccounts: input.bankAccounts as Prisma.InputJsonValue | undefined,
       },
     });
+
+    // Initialize default settings & parking so the building is immediately configurable
+    const ctx: TenantContext = {
+      tenantId: created.id,
+      actorType: 'SYSTEM',
+      actorId: 'system',
+      channel: 'SYSTEM',
+    };
+    await this.prisma.withTenant(ctx, async (tx) => {
+      await tx.tenantSettings.create({
+        data: {
+          id: generateUuidV7(),
+          tenantId: created.id,
+          monthlyFeePerSqmCents: 0,
+          depositRequiredCents: 20000,
+          arrearsToleranceMonths: 2,
+          paymentProofDeadlineMinutes: 240,
+          extraGuestDeclaredCents: 500,
+          extraGuestUndeclaredCents: 1000,
+          entryMarginMinutes: 10,
+          generalAdvanceHours: 24,
+          shortNoticeAdvanceMinutes: 60,
+          frequencyWeekStart: 'MONDAY',
+          cancellationPolicy: { minHoursBefore: 24, cleaningFeeHandling: 'NON_REFUNDABLE' },
+        },
+      });
+      await tx.parkingConfig.create({
+        data: {
+          id: generateUuidV7(),
+          tenantId: created.id,
+          spots: 4,
+          freeMinutes: 180,
+          overtimeFeeCentsPerHour: 200,
+          rounding: 'CEIL_HOUR',
+        },
+      });
+    });
+
+    return created;
   }
 
   async update(
@@ -187,6 +227,7 @@ export class TenantsService {
       // 1. Settings
       const existingSettings = await tx.tenantSettings.findUnique({ where: { tenantId: tenant.id } });
       const settingsData = {
+        monthlyFeePerSqmCents: config.settings.monthlyFeePerSqmCents ?? 0,
         depositRequiredCents: config.settings.depositRequiredCents,
         arrearsToleranceMonths: config.settings.arrearsToleranceMonths,
         paymentProofDeadlineMinutes: config.settings.paymentProofDeadlineMinutes,
@@ -211,12 +252,17 @@ export class TenantsService {
         const utCode = ut.code.trim().toUpperCase();
         await tx.unitType.upsert({
           where: { tenantId_code: { tenantId: tenant.id, code: utCode } },
-          update: { name: ut.name.trim(), includedGuests: ut.includedGuests },
+          update: {
+            name: ut.name.trim(),
+            bedrooms: ut.bedrooms ?? 1,
+            includedGuests: ut.includedGuests,
+          },
           create: {
             id: generateUuidV7(),
             tenantId: tenant.id,
             code: utCode,
             name: ut.name.trim(),
+            bedrooms: ut.bedrooms ?? 1,
             includedGuests: ut.includedGuests,
           },
         });
@@ -401,6 +447,7 @@ export class TenantsService {
           data: {
             id: generateUuidV7(),
             tenantId: newTenant.id,
+            monthlyFeePerSqmCents: settings.monthlyFeePerSqmCents,
             depositRequiredCents: settings.depositRequiredCents,
             arrearsToleranceMonths: settings.arrearsToleranceMonths,
             paymentProofDeadlineMinutes: settings.paymentProofDeadlineMinutes,
@@ -422,6 +469,7 @@ export class TenantsService {
             tenantId: newTenant.id,
             code: ut.code,
             name: ut.name,
+            bedrooms: ut.bedrooms,
             includedGuests: ut.includedGuests,
           })),
         });

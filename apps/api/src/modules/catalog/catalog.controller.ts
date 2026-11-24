@@ -53,9 +53,15 @@ export class CatalogController {
   @Post('unit-types')
   upsertUnitType(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body() body: { code: string; name: string; includedGuests: number },
+    @Body() body: { code: string; name: string; bedrooms?: number; includedGuests: number },
   ) {
     return this.catalogService.upsertUnitType(requireTenant(ctx), body);
+  }
+
+  @Roles('SUPERADMIN', 'ADMIN')
+  @Delete('unit-types/:id')
+  deleteUnitType(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+    return this.catalogService.deleteUnitType(requireTenant(ctx), id);
   }
 
   @Roles('SUPERADMIN', 'ADMIN', 'ACCOUNTANT', 'GUARD')
@@ -68,6 +74,12 @@ export class CatalogController {
   @Post('amenities')
   upsertAmenity(@CurrentTenant() ctx: TenantContext | undefined, @Body() body: UpsertAmenityInput) {
     return this.catalogService.upsertAmenity(requireTenant(ctx), body);
+  }
+
+  @Roles('SUPERADMIN', 'ADMIN')
+  @Delete('amenities/:id')
+  deleteAmenity(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+    return this.catalogService.deleteAmenity(requireTenant(ctx), id);
   }
 
   @Roles('SUPERADMIN', 'ADMIN')

@@ -111,10 +111,20 @@ export class CadastreService {
 
   async createUnit(
     ctx: TenantContext,
-    input: { number: string; floor: number; unitTypeId: string; monthlyFeeCents: number },
+    input: {
+      number: string;
+      floor: number;
+      unitTypeId: string;
+      areaSqm?: number | null;
+      bedrooms?: number;
+      monthlyFeeCents?: number;
+    },
   ) {
-    if (input.monthlyFeeCents < 0) {
+    if (input.monthlyFeeCents !== undefined && input.monthlyFeeCents < 0) {
       throw new DomainError('INVALID_MONTHLY_FEE', 'La alícuota no puede ser negativa.', 422);
+    }
+    if (input.areaSqm !== undefined && input.areaSqm !== null && input.areaSqm < 0) {
+      throw new DomainError('INVALID_AREA', 'El metraje no puede ser negativo.', 422);
     }
     const number = input.number.trim().toUpperCase();
     return this.prisma.withTenant(ctx, async (tx) => {
@@ -124,6 +134,25 @@ export class CadastreService {
       if (existing) {
         throw new DomainError('UNIT_ALREADY_EXISTS', `La unidad ${number} ya existe.`, 409);
       }
+
+      const [unitType, settings] = await Promise.all([
+        tx.unitType.findFirst({ where: { id: input.unitTypeId, tenantId: ctx.tenantId } }),
+        tx.tenantSettings.findUnique({ where: { tenantId: ctx.tenantId } }),
+      ]);
+      if (!unitType) {
+        throw new DomainError('UNIT_TYPE_NOT_FOUND', 'Tipología de unidad no encontrada.', 404);
+      }
+
+      const areaSqm = input.areaSqm ?? null;
+      const bedrooms = input.bedrooms ?? unitType.bedrooms ?? 1;
+      const feePerSqm = settings?.monthlyFeePerSqmCents ?? 0;
+      const monthlyFeeCents =
+        input.monthlyFeeCents !== undefined
+          ? input.monthlyFeeCents
+          : areaSqm !== null && areaSqm > 0 && feePerSqm > 0
+            ? Math.round(areaSqm * feePerSqm)
+            : 0;
+
       const created = await tx.unit.create({
         data: {
           id: generateUuidV7(),
@@ -131,11 +160,63 @@ export class CadastreService {
           number,
           floor: input.floor,
           unitTypeId: input.unitTypeId,
-          monthlyFeeCents: input.monthlyFeeCents,
+          areaSqm,
+          bedrooms,
+          monthlyFeeCents,
         },
       });
       await this.recordAudit(tx, ctx, 'UNIT_CREATED', 'Unit', created.id, null, created);
       return created;
+    });
+  }
+
+  async updateUnit(
+    ctx: TenantContext,
+    unitId: string,
+    input: {
+      number?: string;
+      floor?: number;
+      unitTypeId?: string;
+      areaSqm?: number | null;
+      bedrooms?: number;
+      monthlyFeeCents?: number;
+      isActive?: boolean;
+    },
+  ) {
+    if (input.monthlyFeeCents !== undefined && input.monthlyFeeCents < 0) {
+      throw new DomainError('INVALID_MONTHLY_FEE', 'La alícuota no puede ser negativa.', 422);
+    }
+    if (input.areaSqm !== undefined && input.areaSqm !== null && input.areaSqm < 0) {
+      throw new DomainError('INVALID_AREA', 'El metraje no puede ser negativo.', 422);
+    }
+    return this.prisma.withTenant(ctx, async (tx) => {
+      const existing = await tx.unit.findFirst({ where: { id: unitId, tenantId: ctx.tenantId } });
+      if (!existing) {
+        throw new DomainError('UNIT_NOT_FOUND', 'Unidad no encontrada.', 404);
+      }
+      const nextArea = input.areaSqm !== undefined ? input.areaSqm : existing.areaSqm;
+      let nextMonthlyFee = input.monthlyFeeCents;
+      if (nextMonthlyFee === undefined && input.areaSqm !== undefined && nextArea !== null && nextArea > 0) {
+        const settings = await tx.tenantSettings.findUnique({ where: { tenantId: ctx.tenantId } });
+        if (settings && settings.monthlyFeePerSqmCents > 0) {
+          nextMonthlyFee = Math.round(nextArea * settings.monthlyFeePerSqmCents);
+        }
+      }
+
+      const updated = await tx.unit.update({
+        where: { id: unitId },
+        data: {
+          ...(input.number !== undefined ? { number: input.number.trim().toUpperCase() } : {}),
+          ...(input.floor !== undefined ? { floor: input.floor } : {}),
+          ...(input.unitTypeId !== undefined ? { unitTypeId: input.unitTypeId } : {}),
+          ...(input.areaSqm !== undefined ? { areaSqm: input.areaSqm } : {}),
+          ...(input.bedrooms !== undefined ? { bedrooms: input.bedrooms } : {}),
+          ...(nextMonthlyFee !== undefined ? { monthlyFeeCents: nextMonthlyFee } : {}),
+          ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        },
+      });
+      await this.recordAudit(tx, ctx, 'UNIT_UPDATED', 'Unit', unitId, existing, updated);
+      return updated;
     });
   }
 
