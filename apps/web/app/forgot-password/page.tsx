@@ -15,15 +15,8 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <main style={{ maxWidth: '420px', margin: '72px auto', padding: '0 20px' }}>
-      <section
-        style={{
-          backgroundColor: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-md)',
-          padding: '28px',
-        }}
-      >
+    <main className="auth-shell">
+      <section className="auth-card">
         <h1 style={{ margin: '0 0 8px', fontSize: '20px' }}>Recuperar acceso</h1>
         {sent ? (
           <p style={{ fontSize: '14px', color: 'var(--color-text-muted)' }}>

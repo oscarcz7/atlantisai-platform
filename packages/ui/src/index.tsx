@@ -11,14 +11,24 @@ export function StatusBadge({ status }: { status: string }) {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        padding: '2px 10px',
-        borderRadius: 'var(--radius-sm)',
-        fontSize: '12px',
+        gap: '6px',
+        padding: '4px 10px',
+        borderRadius: '999px',
+        fontSize: '11px',
         fontWeight: 600,
-        border: `1px solid var(--color-${meta.tone})`,
+        backgroundColor: `var(--color-${meta.tone}-bg, #e8f3f5)`,
         color: `var(--color-${meta.tone})`,
+        whiteSpace: 'nowrap',
       }}
     >
+      <span
+        style={{
+          width: '6px',
+          height: '6px',
+          borderRadius: '50%',
+          backgroundColor: 'currentColor',
+        }}
+      />
       {meta.label}
     </span>
   );

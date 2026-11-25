@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Building2 } from 'lucide-react';
 import { ApiClientError, authApi } from '../../lib/api/auth';
 
 export default function LoginPage() {
@@ -36,7 +37,7 @@ export default function LoginPage() {
         if (res.user.tenants[0]) {
           sessionStorage.setItem('noah_tenant_id', res.user.tenants[0].id);
         }
-        router.push('/dashboard/users');
+        router.push('/dashboard');
       }
     } catch (err) {
       if (err instanceof ApiClientError && err.code === 'TOTP_REQUIRED') {
@@ -53,22 +54,24 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ maxWidth: '420px', margin: '72px auto', padding: '0 20px' }}>
-      <section
-        style={{
-          backgroundColor: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-md)',
-          padding: '28px',
-        }}
-      >
-        <h1 style={{ margin: '0 0 8px', fontSize: '20px' }}>Iniciar sesión</h1>
-        <p style={{ margin: '0 0 20px', fontSize: '14px', color: 'var(--color-text-muted)' }}>
+    <main className="auth-shell">
+      <section className="auth-card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '22px' }}>
+          <span className="brand-symbol">
+            <Building2 size={20} />
+          </span>
+          <span style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '-1px' }}>
+            noah<span className="brand-period">.</span>
+          </span>
+        </div>
+
+        <h1 style={{ margin: '0 0 6px', fontSize: '22px', letterSpacing: '-0.5px' }}>Iniciar sesión</h1>
+        <p style={{ margin: '0 0 22px', fontSize: '13px', color: 'var(--color-text-muted)' }}>
           Plataforma de Gestión Residencial — Acceso interno
         </p>
 
         <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '14px' }}>
-          <label style={{ display: 'grid', gap: '6px', fontSize: '14px' }}>
+          <label style={{ display: 'grid', gap: '6px', fontSize: '13px', fontWeight: 500 }}>
             Correo electrónico
             <input
               type="email"
@@ -77,7 +80,7 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="admin@edificionoah.com"
               style={{
-                padding: '10px 12px',
+                padding: '11px 13px',
                 borderRadius: 'var(--radius-sm)',
                 border: '1px solid var(--color-border)',
                 backgroundColor: 'var(--color-bg)',
@@ -86,7 +89,7 @@ export default function LoginPage() {
             />
           </label>
 
-          <label style={{ display: 'grid', gap: '6px', fontSize: '14px' }}>
+          <label style={{ display: 'grid', gap: '6px', fontSize: '13px', fontWeight: 500 }}>
             Contraseña
             <input
               type="password"
@@ -94,7 +97,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               style={{
-                padding: '10px 12px',
+                padding: '11px 13px',
                 borderRadius: 'var(--radius-sm)',
                 border: '1px solid var(--color-border)',
                 backgroundColor: 'var(--color-bg)',
@@ -104,7 +107,7 @@ export default function LoginPage() {
           </label>
 
           {needsTotp && (
-            <label style={{ display: 'grid', gap: '6px', fontSize: '14px' }}>
+            <label style={{ display: 'grid', gap: '6px', fontSize: '13px', fontWeight: 500 }}>
               Código de verificación (6 dígitos)
               <input
                 type="text"
@@ -115,7 +118,7 @@ export default function LoginPage() {
                 onChange={(e) => setTotpCode(e.target.value)}
                 placeholder="123456"
                 style={{
-                  padding: '10px 12px',
+                  padding: '11px 13px',
                   borderRadius: 'var(--radius-sm)',
                   border: '1px solid var(--color-border)',
                   backgroundColor: 'var(--color-bg)',
@@ -132,9 +135,10 @@ export default function LoginPage() {
               style={{
                 padding: '10px 12px',
                 borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--color-danger)',
+                backgroundColor: 'var(--color-danger-bg)',
                 color: 'var(--color-danger)',
                 fontSize: '13px',
+                fontWeight: 500,
               }}
             >
               {error}
@@ -145,21 +149,22 @@ export default function LoginPage() {
             type="submit"
             disabled={loading}
             style={{
-              padding: '10px 16px',
-              borderRadius: 'var(--radius-sm)',
+              padding: '12px 16px',
+              borderRadius: '999px',
               border: 'none',
-              backgroundColor: 'var(--color-primary)',
+              backgroundColor: 'var(--color-dark)',
               color: '#ffffff',
               fontWeight: 600,
               cursor: 'pointer',
+              marginTop: '4px',
             }}
           >
             {loading ? 'Verificando...' : needsTotp ? 'Verificar y entrar' : 'Continuar'}
           </button>
         </form>
 
-        <div style={{ marginTop: '16px', fontSize: '13px' }}>
-          <Link href="/forgot-password" style={{ color: 'var(--color-primary)' }}>
+        <div style={{ marginTop: '18px', fontSize: '13px', textAlign: 'center' }}>
+          <Link href="/forgot-password" style={{ color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 500 }}>
             ¿Olvidaste tu contraseña?
           </Link>
         </div>

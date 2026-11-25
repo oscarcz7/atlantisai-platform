@@ -52,15 +52,8 @@ export default function Setup2faPage() {
   }
 
   return (
-    <main style={{ maxWidth: '480px', margin: '56px auto', padding: '0 20px' }}>
-      <section
-        style={{
-          backgroundColor: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-md)',
-          padding: '28px',
-        }}
-      >
+    <main className="auth-shell">
+      <section className="auth-card" style={{ maxWidth: '480px' }}>
         <h1 style={{ margin: '0 0 8px', fontSize: '20px' }}>
           Configurar segundo factor (2FA obligatorio)
         </h1>
@@ -90,12 +83,12 @@ export default function Setup2faPage() {
             </div>
             <button
               type="button"
-              onClick={() => router.push('/dashboard/users')}
+              onClick={() => router.push('/dashboard')}
               style={{
-                padding: '10px 16px',
-                borderRadius: 'var(--radius-sm)',
+                padding: '11px 18px',
+                borderRadius: '999px',
                 border: 'none',
-                backgroundColor: 'var(--color-primary)',
+                backgroundColor: 'var(--color-dark)',
                 color: '#ffffff',
                 fontWeight: 600,
                 cursor: 'pointer',
