@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Car, Clock, LogIn, LogOut, Plus, Shield } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
+import { HabitatDrawer, ModuleHero } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
 
 interface ParkingSpot {
@@ -103,83 +105,59 @@ export default function GaritaConsolePage() {
   }
 
   return (
-    <section style={{ fontSize: '16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '22px' }}>Consola de garita</h1>
-          <p style={{ margin: '4px 0 0', fontSize: '14px', color: 'var(--color-text-muted)' }}>
-            Cronómetro de parqueaderos de visitas (amarillo a las 2 h 45 m, rojo al superar {freeMinutes / 60} h).
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setDrawerOpen(true)}
-          style={{
-            minHeight: '44px',
-            padding: '10px 18px',
-            borderRadius: 'var(--radius-sm)',
-            border: 'none',
-            backgroundColor: 'var(--color-primary)',
-            color: '#ffffff',
-            fontWeight: 600,
-            fontSize: '15px',
-            cursor: 'pointer',
-          }}
-        >
-          + Registrar visita
-        </button>
-      </div>
+    <section className="internal-page" style={{ fontSize: '15px' }}>
+      <ModuleHero
+        eyebrow="CONTROL DE ACCESO Y PARQUEADEROS"
+        title="Consola de garita"
+        description={`Modo tablet táctil: cronómetro en vivo de parqueaderos de visitas (alerta a 2h45m, exceso al superar ${freeMinutes / 60} h).`}
+        icon={Shield}
+        actions={
+          <button type="button" className="h-btn-dark" style={{ minHeight: '44px', padding: '0 20px', fontSize: '14px' }} onClick={() => setDrawerOpen(true)}>
+            <Plus size={16} /> Registrar visita
+          </button>
+        }
+      />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '14px' }}>
         {spots.map((s) => {
           const elapsed = s.checkInAt ? formatElapsed(s.checkInAt, nowMs) : null;
-          const borderColor = !s.occupied
-            ? 'var(--color-border)'
-            : elapsed && elapsed.minutes >= freeMinutes
-              ? 'var(--color-danger)'
-              : elapsed && elapsed.minutes >= freeMinutes - 15
-                ? 'var(--color-warning)'
-                : 'var(--color-primary)';
+          const isOver = Boolean(s.occupied && elapsed && elapsed.minutes >= freeMinutes);
+          const isWarn = Boolean(s.occupied && elapsed && !isOver && elapsed.minutes >= freeMinutes - 15);
+          const accent = isOver ? '#b7544d' : isWarn ? '#99771f' : s.occupied ? 'var(--primary)' : 'var(--border)';
 
           return (
             <article
               key={s.spot}
+              className="h-panel"
               style={{
-                padding: '18px',
-                backgroundColor: 'var(--color-surface)',
-                border: `2px solid ${borderColor}`,
-                borderRadius: 'var(--radius-md)',
+                border: `2px solid ${accent}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <strong>Puesto #{s.spot}</strong>
+                <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '16px' }}>
+                  <Car size={16} /> Puesto #{s.spot}
+                </strong>
                 <StatusBadge status={s.occupied ? 'PENDING_PAYMENT' : 'OK'} />
               </div>
-              <p style={{ margin: '10px 0 4px', fontSize: '15px' }}>
+              <p style={{ margin: '4px 0 0', fontSize: '15px', fontWeight: s.occupied ? 600 : 400, color: s.occupied ? 'var(--foreground)' : 'var(--muted-foreground)' }}>
                 {s.occupied ? `${s.visitorName ?? 'Visita'} · ${s.plate ?? 'Sin placa'}` : 'Disponible'}
               </p>
               {elapsed && (
-                <div style={{ fontSize: '18px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: borderColor }}>
-                  {elapsed.text}
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '20px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: accent }}>
+                  <Clock size={16} /> {elapsed.text}
                 </div>
               )}
               {s.occupied && s.visitId && (
                 <button
                   type="button"
-                  onClick={() => handleCheckOut(s.visitId!)}
-                  style={{
-                    marginTop: '12px',
-                    minHeight: '44px',
-                    width: '100%',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--color-danger)',
-                    backgroundColor: 'transparent',
-                    color: 'var(--color-danger)',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
+                  className="h-btn-danger"
+                  style={{ marginTop: '6px', minHeight: '44px', width: '100%' }}
+                  onClick={() => void handleCheckOut(s.visitId!)}
                 >
-                  Registrar salida
+                  <LogOut size={15} /> Registrar salida
                 </button>
               )}
             </article>
@@ -187,100 +165,102 @@ export default function GaritaConsolePage() {
         })}
       </div>
 
-      <h2 style={{ fontSize: '18px', marginBottom: '12px' }}>Visitas recientes</h2>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '15px', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)' }}>
-        <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-            <th style={{ padding: '12px' }}>Visitante</th>
-            <th style={{ padding: '12px' }}>Placa</th>
-            <th style={{ padding: '12px' }}>Puesto</th>
-            <th style={{ padding: '12px' }}>Exceso</th>
-            <th style={{ padding: '12px' }}>Acción</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visits.map((v) => (
-            <tr key={v.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-              <td style={{ padding: '12px' }}>
-                <div style={{ fontWeight: 600 }}>{v.visitorName}</div>
-                <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{v.nationalId}</div>
-              </td>
-              <td style={{ padding: '12px' }}>{v.plate ?? '—'}</td>
-              <td style={{ padding: '12px' }}>{v.parkingSpot ? `#${v.parkingSpot}` : '—'}</td>
-              <td style={{ padding: '12px' }}>{v.overtimeCents > 0 ? <Money cents={v.overtimeCents} /> : '—'}</td>
-              <td style={{ padding: '12px' }}>
-                {!v.checkInAt ? (
-                  <button
-                    type="button"
-                    onClick={() => handleCheckIn(v.id)}
-                    style={{ minHeight: '44px', padding: '0 14px', borderRadius: 'var(--radius-sm)', border: 'none', backgroundColor: 'var(--color-success)', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
-                  >
-                    Entrada
-                  </button>
-                ) : !v.checkOutAt ? (
-                  <button
-                    type="button"
-                    onClick={() => handleCheckOut(v.id)}
-                    style={{ minHeight: '44px', padding: '0 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-danger)', background: 'transparent', color: 'var(--color-danger)', fontWeight: 600, cursor: 'pointer' }}
-                  >
-                    Salida
-                  </button>
-                ) : (
-                  <StatusBadge status="COMPLETED" />
-                )}
-              </td>
+      <div className="h-table-wrap">
+        <div style={{ padding: '16px 20px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ margin: 0, fontSize: '16px' }}>Visitas recientes</h2>
+          <span style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>{visits.length} registros</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Visitante</th>
+              <th>Placa</th>
+              <th>Puesto</th>
+              <th>Exceso</th>
+              <th style={{ textAlign: 'right' }}>Acción</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {visits.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ textAlign: 'center', color: 'var(--muted-foreground)', padding: '24px' }}>
+                  No hay visitas registradas hoy.
+                </td>
+              </tr>
+            ) : (
+              visits.map((v) => (
+                <tr key={v.id}>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{v.visitorName}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--muted-foreground)', fontFamily: 'monospace' }}>{v.nationalId}</div>
+                  </td>
+                  <td>{v.plate ?? '—'}</td>
+                  <td>{v.parkingSpot ? `#${v.parkingSpot}` : '—'}</td>
+                  <td>{v.overtimeCents > 0 ? <Money cents={v.overtimeCents} /> : '—'}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    {!v.checkInAt ? (
+                      <button type="button" className="h-btn-success" style={{ minHeight: '44px' }} onClick={() => void handleCheckIn(v.id)}>
+                        <LogIn size={15} /> Entrada
+                      </button>
+                    ) : !v.checkOutAt ? (
+                      <button type="button" className="h-btn-danger" style={{ minHeight: '44px' }} onClick={() => void handleCheckOut(v.id)}>
+                        <LogOut size={15} /> Salida
+                      </button>
+                    ) : (
+                      <StatusBadge status="COMPLETED" />
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
-      {drawerOpen && (
-        <aside
-          style={{
-            position: 'fixed',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            width: '380px',
-            backgroundColor: 'var(--color-surface)',
-            borderLeft: '1px solid var(--color-border)',
-            padding: '24px',
-            boxShadow: '-4px 0 24px rgba(0,0,0,0.14)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ margin: 0, fontSize: '18px' }}>Registrar visita</h2>
-            <button type="button" onClick={() => setDrawerOpen(false)}>✕</button>
-          </div>
-          <form onSubmit={handleRegister} style={{ display: 'grid', gap: '12px' }}>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Unidad anfitriona
-              <select value={hostUnitId} onChange={(e) => setHostUnitId(e.target.value)} style={{ padding: '10px', border: '1px solid var(--color-border)' }}>
-                {units.map((u) => <option key={u.id} value={u.id}>Depto. {u.number}</option>)}
-              </select>
-            </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Nombre del visitante
-              <input required value={visitorName} onChange={(e) => setVisitorName(e.target.value)} style={{ padding: '10px', border: '1px solid var(--color-border)' }} />
-            </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Cédula / Pasaporte
-              <input required value={nationalId} onChange={(e) => setNationalId(e.target.value)} style={{ padding: '10px', border: '1px solid var(--color-border)' }} />
-            </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Placa (opcional)
-              <input value={plate} onChange={(e) => setPlate(e.target.value)} style={{ padding: '10px', border: '1px solid var(--color-border)' }} />
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
-              <input type="checkbox" checked={needsParking} onChange={(e) => setNeedsParking(e.target.checked)} />
-              Usa parqueadero de visitas
-            </label>
-            <button type="submit" style={{ minHeight: '44px', backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 600, cursor: 'pointer' }}>
+      <HabitatDrawer
+        open={drawerOpen}
+        title="Registrar visita"
+        subtitle="Ingreso rápido en garita con asignación opcional de parqueadero de visitas."
+        onClose={() => setDrawerOpen(false)}
+        width={430}
+      >
+        <form onSubmit={handleRegister} style={{ display: 'grid', gap: '14px' }}>
+          <label className="h-field">
+            Unidad anfitriona
+            <select value={hostUnitId} onChange={(e) => setHostUnitId(e.target.value)} className="h-input" style={{ minHeight: '44px' }}>
+              {units.map((u) => (
+                <option key={u.id} value={u.id}>
+                  Depto. {u.number}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="h-field">
+            Nombre del visitante
+            <input required value={visitorName} onChange={(e) => setVisitorName(e.target.value)} className="h-input" style={{ minHeight: '44px' }} />
+          </label>
+          <label className="h-field">
+            Cédula / Pasaporte
+            <input required value={nationalId} onChange={(e) => setNationalId(e.target.value)} className="h-input" style={{ minHeight: '44px' }} />
+          </label>
+          <label className="h-field">
+            Placa (opcional)
+            <input value={plate} onChange={(e) => setPlate(e.target.value)} className="h-input" style={{ minHeight: '44px' }} />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px' }}>
+            <input type="checkbox" checked={needsParking} onChange={(e) => setNeedsParking(e.target.checked)} style={{ width: '18px', height: '18px' }} />
+            Usa parqueadero de visitas
+          </label>
+          <div className="h-drawer-footer">
+            <button type="button" className="h-btn-outline" style={{ minHeight: '44px' }} onClick={() => setDrawerOpen(false)}>
+              Cancelar
+            </button>
+            <button type="submit" className="h-btn-dark" style={{ minHeight: '44px' }}>
               Guardar visita
             </button>
-          </form>
-        </aside>
-      )}
+          </div>
+        </form>
+      </HabitatDrawer>
     </section>
   );
 }

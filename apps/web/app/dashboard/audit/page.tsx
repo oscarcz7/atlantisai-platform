@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { Activity, Download } from 'lucide-react';
 import { Money } from '@noah/ui';
+import { ModuleHero } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
 import { downloadCsv } from '../../../lib/export-csv';
 
@@ -40,72 +42,66 @@ export default function AuditPage() {
   }, [loadData]);
 
   return (
-    <section>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '22px' }}>Auditoría y reportes operativos</h1>
-          <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--color-text-muted)' }}>
-            Bitácora inmutable de solo inserción y métricas consolidadas del edificio.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() =>
-            downloadCsv(
-              'auditoria-noah.csv',
-              ['Fecha', 'Acción', 'Entidad', 'Actor', 'Canal'],
-              logs.map((l) => [l.createdAt, l.action, l.entity, l.actorType, l.channel]),
-            )
-          }
-          style={{
-            padding: '8px 12px',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--color-border)',
-            backgroundColor: 'var(--color-surface)',
-            color: 'var(--color-text)',
-            cursor: 'pointer',
-            fontSize: '13px',
-          }}
-        >
-          Exportar bitácora CSV
-        </button>
-      </div>
+    <section className="internal-page">
+      <ModuleHero
+        eyebrow="TRAZABILIDAD Y REPORTES"
+        title="Auditoría y reportes operativos"
+        description="Bitácora inmutable de solo inserción y métricas consolidadas del edificio listas para exportar."
+        icon={Activity}
+        actions={
+          <button
+            type="button"
+            className="h-btn-dark"
+            onClick={() =>
+              downloadCsv(
+                'auditoria-noah.csv',
+                ['Fecha', 'Acción', 'Entidad', 'Actor', 'Canal'],
+                logs.map((l) => [l.createdAt, l.action, l.entity, l.actorType, l.channel]),
+              )
+            }
+          >
+            <Download size={14} /> Exportar bitácora CSV
+          </button>
+        }
+      />
 
       {summary && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-          <div style={{ padding: '16px', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
-            <h2 style={{ margin: '0 0 10px', fontSize: '15px' }}>Reservas por estado</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
+          <div className="h-panel">
+            <h2 style={{ margin: '0 0 12px', fontSize: '15px' }}>Reservas por estado</h2>
             {summary.reservationsByStatus.length === 0 ? (
-              <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Sin datos</span>
+              <span style={{ fontSize: '13px', color: 'var(--muted-foreground)' }}>Sin datos</span>
             ) : (
               summary.reservationsByStatus.map((r) => (
-                <div key={r.status} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
+                <div key={r.status} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '6px 0', borderTop: '1px solid #f0eee9' }}>
                   <span>{r.status}</span>
                   <strong>{r.count}</strong>
                 </div>
               ))
             )}
           </div>
-          <div style={{ padding: '16px', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
-            <h2 style={{ margin: '0 0 10px', fontSize: '15px' }}>Movimientos por concepto</h2>
+          <div className="h-panel">
+            <h2 style={{ margin: '0 0 12px', fontSize: '15px' }}>Movimientos por concepto</h2>
             {summary.ledgerByType.length === 0 ? (
-              <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Sin datos</span>
+              <span style={{ fontSize: '13px', color: 'var(--muted-foreground)' }}>Sin datos</span>
             ) : (
               summary.ledgerByType.map((l) => (
-                <div key={l.type} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
+                <div key={l.type} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '6px 0', borderTop: '1px solid #f0eee9' }}>
                   <span>{l.type} ({l.count})</span>
-                  <strong><Money cents={l.totalCents} /></strong>
+                  <strong>
+                    <Money cents={l.totalCents} />
+                  </strong>
                 </div>
               ))
             )}
           </div>
-          <div style={{ padding: '16px', backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
-            <h2 style={{ margin: '0 0 10px', fontSize: '15px' }}>Incidencias por categoría</h2>
+          <div className="h-panel">
+            <h2 style={{ margin: '0 0 12px', fontSize: '15px' }}>Incidencias por categoría</h2>
             {summary.ticketsByCategory.length === 0 ? (
-              <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Sin datos</span>
+              <span style={{ fontSize: '13px', color: 'var(--muted-foreground)' }}>Sin datos</span>
             ) : (
               summary.ticketsByCategory.map((t, idx) => (
-                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
+                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '6px 0', borderTop: '1px solid #f0eee9' }}>
                   <span>{t.category} ({t.status})</span>
                   <strong>{t.count}</strong>
                 </div>
@@ -115,26 +111,38 @@ export default function AuditPage() {
         </div>
       )}
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)' }}>
-        <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-            <th style={{ padding: '12px' }}>Fecha (Ecuador)</th>
-            <th style={{ padding: '12px' }}>Acción</th>
-            <th style={{ padding: '12px' }}>Entidad</th>
-            <th style={{ padding: '12px' }}>Canal</th>
-          </tr>
-        </thead>
-        <tbody>
-          {logs.map((l) => (
-            <tr key={l.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-              <td style={{ padding: '12px' }}>{new Date(l.createdAt).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })}</td>
-              <td style={{ padding: '12px', fontFamily: 'monospace' }}>{l.action}</td>
-              <td style={{ padding: '12px' }}>{l.entity}</td>
-              <td style={{ padding: '12px' }}>{l.channel}</td>
+      <div className="h-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha (Ecuador)</th>
+              <th>Acción</th>
+              <th>Entidad</th>
+              <th>Canal</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {logs.length === 0 ? (
+              <tr>
+                <td colSpan={4} style={{ textAlign: 'center', padding: '24px', color: 'var(--muted-foreground)' }}>
+                  No hay eventos registrados aún.
+                </td>
+              </tr>
+            ) : (
+              logs.map((l) => (
+                <tr key={l.id}>
+                  <td style={{ fontSize: '12.5px', color: 'var(--muted-foreground)' }}>
+                    {new Date(l.createdAt).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })}
+                  </td>
+                  <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{l.action}</td>
+                  <td>{l.entity}</td>
+                  <td>{l.channel}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

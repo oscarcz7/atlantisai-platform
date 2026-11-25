@@ -32,25 +32,25 @@ interface PersonRow {
 interface ReservationRow {
   id: string;
   status: string;
-  startAt: string;
-  endAt: string;
-  unit?: { number: string };
+  startsAt: string;
+  endsAt: string;
+  unit?: { number: string } | null;
   amenities?: Array<{ amenity: { name: string } }>;
 }
 
 interface IncidentRow {
   id: string;
-  title: string;
   category: string;
+  location: string;
+  description: string;
   urgency: 'LOW' | 'MEDIUM' | 'HIGH' | 'EMERGENCY';
   status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
   createdAt: string;
-  unit?: { number: string } | null;
 }
 
 interface SummaryReport {
-  reservationsByStatus?: Array<{ status: string; _count: { _all: number } }>;
-  ledgerByType?: Array<{ type: string; _sum: { amountCents: number | null } }>;
+  reservationsByStatus?: Array<{ status: string; count: number }>;
+  ledgerByType?: Array<{ type: string; count: number; totalCents: number }>;
 }
 
 const URGENCY_LABELS: Record<IncidentRow['urgency'], { label: string; cls: string }> = {
@@ -113,10 +113,10 @@ export default function DashboardOverviewPage() {
   );
 
   const collectedCents = Math.abs(
-    summary?.ledgerByType?.find((l) => l.type === 'PAYMENT')?._sum.amountCents ?? 0,
+    summary?.ledgerByType?.find((l) => l.type === 'PAYMENT')?.totalCents ?? 0,
   );
   const billedCents =
-    summary?.ledgerByType?.find((l) => l.type === 'MONTHLY_FEE')?._sum.amountCents ?? 0;
+    summary?.ledgerByType?.find((l) => l.type === 'MONTHLY_FEE')?.totalCents ?? 0;
 
   const upcomingReservations = useMemo(() => {
     return reservations
@@ -126,7 +126,7 @@ export default function DashboardOverviewPage() {
 
   const visibleIncidents = useMemo(() => {
     return incidents.filter((inc) => {
-      const matchQuery = `${inc.title} ${inc.category} ${inc.unit?.number ?? ''}`
+      const matchQuery = `${inc.category} ${inc.location} ${inc.description}`
         .toLowerCase()
         .includes(query.toLowerCase());
       const matchStatus = statusFilter === 'ALL' || inc.status === statusFilter;
@@ -364,7 +364,7 @@ export default function DashboardOverviewPage() {
                 </p>
               ) : (
                 upcomingReservations.map((res, idx) => {
-                  const dt = new Date(res.startAt);
+                  const dt = new Date(res.startsAt);
                   const day = String(dt.getDate()).padStart(2, '0');
                   const month = new Intl.DateTimeFormat('es-EC', { month: 'short' })
                     .format(dt)
@@ -456,11 +456,11 @@ export default function DashboardOverviewPage() {
                     return (
                       <tr key={inc.id} style={{ borderBottom: '1px solid #f0eee9' }}>
                         <td style={{ padding: '11px 12px' }}>
-                          <div style={{ fontWeight: 600 }}>{inc.title}</div>
+                          <div style={{ fontWeight: 600 }}>{inc.description}</div>
                           <div style={{ fontSize: '11px', color: 'var(--muted-foreground)' }}>{inc.category}</div>
                         </td>
                         <td style={{ padding: '11px 12px' }}>
-                          {inc.unit?.number ? `Depto. ${inc.unit.number}` : 'Área común'}
+                          {inc.location || 'Área común'}
                         </td>
                         <td style={{ padding: '11px 12px' }}>
                           <span

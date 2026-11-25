@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Check, FileSpreadsheet, Plus, Receipt, X } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
+import { HabitatDrawer, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
 
 interface PaymentProofRow {
@@ -112,73 +114,73 @@ export default function BillingPage() {
     return found ? `Depto. ${found.number}` : id.slice(0, 8);
   };
 
-  return (
-    <section>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '22px' }}>Finanzas y bandeja contable</h1>
-          <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--color-text-muted)' }}>
-            Revisión de comprobantes, emisión secuencial de recibos y generación de alícuotas.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            type="button"
-            onClick={handleGenerateFees}
-            style={{
-              padding: '8px 12px',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--color-border)',
-              backgroundColor: 'var(--color-surface)',
-              color: 'var(--color-text)',
-              cursor: 'pointer',
-              fontSize: '13px',
-            }}
-          >
-            Generar alícuotas del mes
-          </button>
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(true)}
-            style={{
-              padding: '8px 14px',
-              borderRadius: 'var(--radius-sm)',
-              border: 'none',
-              backgroundColor: 'var(--color-primary)',
-              color: '#ffffff',
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontSize: '13px',
-            }}
-          >
-            + Cargar comprobante
-          </button>
-        </div>
-      </div>
+  const pendingProofs = proofs.filter((p) => p.status === 'PENDING').length;
+  const approvedTotalCents = proofs
+    .filter((p) => p.status === 'APPROVED')
+    .reduce((sum, p) => sum + p.amountCents, 0);
 
-      {toast && (
-        <div style={{ marginBottom: '14px', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-success)', color: 'var(--color-success)', fontSize: '13px' }}>
-          {toast}
+  return (
+    <section className="internal-page">
+      <ModuleHero
+        eyebrow="TESORERÍA Y RECAUDACIÓN"
+        title="Finanzas y bandeja contable"
+        description="Revisión en vista dividida de comprobantes, emisión secuencial de recibos REC y generación de alícuotas."
+        icon={Receipt}
+        actions={
+          <>
+            <button type="button" className="h-btn-outline" onClick={() => void handleGenerateFees()}>
+              <FileSpreadsheet size={14} /> Generar alícuotas del mes
+            </button>
+            <button type="button" className="h-btn-dark" onClick={() => setDrawerOpen(true)}>
+              <Plus size={15} /> Cargar comprobante
+            </button>
+          </>
+        }
+      />
+
+      {toast && <HabitatToast type="ok" text={toast} onClose={() => setToast(null)} />}
+
+      {isAccountant && (
+        <div className="h-kpi-strip">
+          <article className="h-kpi-card">
+            <span>Comprobantes por revisar</span>
+            <strong>{String(pendingProofs).padStart(2, '0')}</strong>
+            <small>pendientes de aprobación</small>
+          </article>
+          <article className="h-kpi-card">
+            <span>Total aprobado</span>
+            <strong>
+              <Money cents={approvedTotalCents} />
+            </strong>
+            <small>en comprobantes validados</small>
+          </article>
+          <article className="h-kpi-card">
+            <span>Total recibidos</span>
+            <strong>{proofs.length}</strong>
+            <small>histórico en bandeja</small>
+          </article>
         </div>
       )}
 
       {!isAccountant ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>
-          La cola de aprobación de comprobantes es visible exclusivamente para el Contador y SuperAdmin.
-        </p>
+        <div className="h-panel" style={{ color: 'var(--muted-foreground)', fontSize: '13.5px' }}>
+          Por separación de funciones, la cola de aprobación de comprobantes es exclusiva para el <strong>Contador</strong> y <strong>SuperAdmin</strong>. Puedes cargar comprobantes o generar las alícuotas del mes desde los botones superiores.
+        </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '20px' }}>
-          <div style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px', alignItems: 'start' }}>
+          <div className="h-table-wrap">
             {proofs.length === 0 ? (
-              <p style={{ padding: '20px', color: 'var(--color-text-muted)' }}>No hay comprobantes registrados.</p>
+              <p style={{ padding: '22px', margin: 0, color: 'var(--muted-foreground)', fontSize: '13.5px' }}>
+                No hay comprobantes registrados.
+              </p>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <table>
                 <thead>
-                  <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-                    <th style={{ padding: '10px' }}>Unidad</th>
-                    <th style={{ padding: '10px' }}>Banco / Ref.</th>
-                    <th style={{ padding: '10px' }}>Monto</th>
-                    <th style={{ padding: '10px' }}>Estado</th>
+                  <tr>
+                    <th>Unidad</th>
+                    <th>Banco / Ref.</th>
+                    <th>Monto</th>
+                    <th>Estado</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -187,18 +189,23 @@ export default function BillingPage() {
                       key={p.id}
                       onClick={() => setSelected(p)}
                       style={{
-                        borderBottom: '1px solid var(--color-border)',
                         cursor: 'pointer',
-                        backgroundColor: selected?.id === p.id ? 'var(--color-bg)' : 'transparent',
+                        backgroundColor: selected?.id === p.id ? '#f6eee5' : undefined,
                       }}
                     >
-                      <td style={{ padding: '10px', fontWeight: 600 }}>{unitLabel(p.unitId)}</td>
-                      <td style={{ padding: '10px' }}>
+                      <td style={{ fontWeight: 600 }}>{unitLabel(p.unitId)}</td>
+                      <td>
                         <div>{p.bank}</div>
-                        <div style={{ fontSize: '12px', fontFamily: 'monospace', color: 'var(--color-text-muted)' }}>{p.reference}</div>
+                        <div style={{ fontSize: '11.5px', fontFamily: 'monospace', color: 'var(--muted-foreground)' }}>
+                          {p.reference}
+                        </div>
                       </td>
-                      <td style={{ padding: '10px' }}><Money cents={p.amountCents} /></td>
-                      <td style={{ padding: '10px' }}><StatusBadge status={p.status === 'PENDING' ? 'IN_REVIEW' : p.status} /></td>
+                      <td>
+                        <Money cents={p.amountCents} />
+                      </td>
+                      <td>
+                        <StatusBadge status={p.status === 'PENDING' ? 'IN_REVIEW' : p.status} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -206,113 +213,107 @@ export default function BillingPage() {
             )}
           </div>
 
-          <div style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '20px' }}>
+          <div className="h-panel">
             {selected ? (
               <>
-                <h2 style={{ margin: '0 0 12px', fontSize: '17px' }}>Detalle del comprobante</h2>
-                <dl style={{ display: 'grid', gap: '8px', fontSize: '14px', margin: 0 }}>
-                  <div><strong>Unidad:</strong> {unitLabel(selected.unitId)}</div>
-                  <div><strong>Banco:</strong> {selected.bank}</div>
-                  <div><strong>Referencia:</strong> <code>{selected.reference}</code></div>
-                  <div><strong>Monto:</strong> <Money cents={selected.amountCents} /></div>
-                  <div><strong>Fecha transferencia:</strong> {new Date(selected.transferDate).toLocaleDateString('es-EC')}</div>
-                  <div><strong>Estado:</strong> <StatusBadge status={selected.status === 'PENDING' ? 'IN_REVIEW' : selected.status} /></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <h2 style={{ margin: 0, fontSize: '16px' }}>Detalle del comprobante</h2>
+                  <StatusBadge status={selected.status === 'PENDING' ? 'IN_REVIEW' : selected.status} />
+                </div>
+                <dl style={{ display: 'grid', gap: '10px', fontSize: '13.5px', margin: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f0eee9', paddingBottom: '8px' }}>
+                    <dt style={{ color: 'var(--muted-foreground)' }}>Unidad</dt>
+                    <dd style={{ margin: 0, fontWeight: 600 }}>{unitLabel(selected.unitId)}</dd>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f0eee9', paddingBottom: '8px' }}>
+                    <dt style={{ color: 'var(--muted-foreground)' }}>Banco</dt>
+                    <dd style={{ margin: 0 }}>{selected.bank}</dd>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f0eee9', paddingBottom: '8px' }}>
+                    <dt style={{ color: 'var(--muted-foreground)' }}>Referencia</dt>
+                    <dd style={{ margin: 0, fontFamily: 'monospace' }}>{selected.reference}</dd>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f0eee9', paddingBottom: '8px' }}>
+                    <dt style={{ color: 'var(--muted-foreground)' }}>Monto</dt>
+                    <dd style={{ margin: 0, fontWeight: 700, fontSize: '16px' }}>
+                      <Money cents={selected.amountCents} />
+                    </dd>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <dt style={{ color: 'var(--muted-foreground)' }}>Fecha transferencia</dt>
+                    <dd style={{ margin: 0 }}>{new Date(selected.transferDate).toLocaleDateString('es-EC')}</dd>
+                  </div>
                   {selected.rejectionReason && (
-                    <div style={{ color: 'var(--color-danger)' }}><strong>Motivo rechazo:</strong> {selected.rejectionReason}</div>
+                    <div style={{ padding: '10px 12px', borderRadius: '10px', background: '#fae9e6', color: '#b7544d', fontSize: '12.5px' }}>
+                      <strong>Motivo rechazo:</strong> {selected.rejectionReason}
+                    </div>
                   )}
                 </dl>
 
                 {selected.status === 'PENDING' && (
                   <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                    <button
-                      type="button"
-                      onClick={() => handleApprove(selected.id)}
-                      style={{
-                        flex: 1,
-                        padding: '10px',
-                        borderRadius: 'var(--radius-sm)',
-                        border: 'none',
-                        backgroundColor: 'var(--color-success)',
-                        color: '#ffffff',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Aprobar pago
+                    <button type="button" className="h-btn-success" style={{ flex: 1 }} onClick={() => void handleApprove(selected.id)}>
+                      <Check size={15} /> Aprobar pago
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleReject(selected.id)}
-                      style={{
-                        flex: 1,
-                        padding: '10px',
-                        borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--color-danger)',
-                        backgroundColor: 'transparent',
-                        color: 'var(--color-danger)',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Rechazar
+                    <button type="button" className="h-btn-danger" style={{ flex: 1 }} onClick={() => void handleReject(selected.id)}>
+                      <X size={15} /> Rechazar
                     </button>
                   </div>
                 )}
               </>
             ) : (
-              <p style={{ color: 'var(--color-text-muted)' }}>Selecciona un comprobante para revisar.</p>
+              <p style={{ color: 'var(--muted-foreground)', margin: 0, fontSize: '13.5px' }}>
+                Selecciona un comprobante de la lista para revisar.
+              </p>
             )}
           </div>
         </div>
       )}
 
-      {drawerOpen && (
-        <aside
-          style={{
-            position: 'fixed',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            width: '380px',
-            backgroundColor: 'var(--color-surface)',
-            borderLeft: '1px solid var(--color-border)',
-            padding: '24px',
-            boxShadow: '-4px 0 24px rgba(0,0,0,0.14)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ margin: 0, fontSize: '18px' }}>Registrar comprobante</h2>
-            <button type="button" onClick={() => setDrawerOpen(false)}>✕</button>
-          </div>
-          <form onSubmit={handleSubmitProof} style={{ display: 'grid', gap: '12px' }}>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Unidad
-              <select value={unitId} onChange={(e) => setUnitId(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }}>
-                {units.map((u) => <option key={u.id} value={u.id}>Depto. {u.number}</option>)}
-              </select>
-            </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Banco
-              <input required value={bank} onChange={(e) => setBank(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
-            </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Monto (USD)
-              <input type="number" step="0.01" required value={amountUsd} onChange={(e) => setAmountUsd(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
-            </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Número de referencia
-              <input required value={reference} onChange={(e) => setReference(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
-            </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Fecha de transferencia
-              <input type="date" required value={transferDate} onChange={(e) => setTransferDate(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
-            </label>
-            <button type="submit" style={{ padding: '10px', backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 600, cursor: 'pointer' }}>
+      <HabitatDrawer
+        open={drawerOpen}
+        title="Registrar comprobante"
+        subtitle="Carga manual de transferencia recibida en administración para validación contable."
+        onClose={() => setDrawerOpen(false)}
+        width={430}
+      >
+        <form onSubmit={handleSubmitProof} style={{ display: 'grid', gap: '14px' }}>
+          <label className="h-field">
+            Unidad
+            <select value={unitId} onChange={(e) => setUnitId(e.target.value)} className="h-input">
+              {units.map((u) => (
+                <option key={u.id} value={u.id}>
+                  Depto. {u.number}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="h-field">
+            Banco
+            <input required value={bank} onChange={(e) => setBank(e.target.value)} className="h-input" />
+          </label>
+          <label className="h-field">
+            Monto (USD)
+            <input type="number" step="0.01" required value={amountUsd} onChange={(e) => setAmountUsd(e.target.value)} className="h-input" />
+          </label>
+          <label className="h-field">
+            Número de referencia
+            <input required value={reference} onChange={(e) => setReference(e.target.value)} className="h-input" />
+          </label>
+          <label className="h-field">
+            Fecha de transferencia
+            <input type="date" required value={transferDate} onChange={(e) => setTransferDate(e.target.value)} className="h-input" />
+          </label>
+          <div className="h-drawer-footer">
+            <button type="button" className="h-btn-outline" onClick={() => setDrawerOpen(false)}>
+              Cancelar
+            </button>
+            <button type="submit" className="h-btn-dark">
               Enviar a bandeja
             </button>
-          </form>
-        </aside>
-      )}
+          </div>
+        </form>
+      </HabitatDrawer>
     </section>
   );
 }

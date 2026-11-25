@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Building2, Copy, Pencil, Plus } from 'lucide-react';
+import { HabitatDrawer, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
 
 interface BankAccount {
@@ -29,38 +31,6 @@ interface TenantDto {
   bankAccounts: BankAccount[] | null;
 }
 
-const inputStyle = {
-  padding: '9px 12px',
-  borderRadius: 'var(--radius-sm)',
-  border: '1px solid var(--color-border)',
-  backgroundColor: 'var(--color-bg)',
-  color: 'var(--color-text)',
-  fontSize: '14px',
-  width: '100%',
-} as const;
-
-const primaryBtn = {
-  padding: '9px 14px',
-  borderRadius: 'var(--radius-sm)',
-  border: 'none',
-  backgroundColor: 'var(--color-primary)',
-  color: '#ffffff',
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontSize: '13px',
-} as const;
-
-const secondaryBtn = {
-  padding: '8px 12px',
-  borderRadius: 'var(--radius-sm)',
-  border: '1px solid var(--color-border)',
-  backgroundColor: 'var(--color-surface)',
-  color: 'var(--color-text)',
-  fontWeight: 500,
-  cursor: 'pointer',
-  fontSize: '13px',
-} as const;
-
 export default function BuildingsPage() {
   const { me, tenantId, setTenantId, refreshMe, apiFetch } = useDashboard();
   const [tenants, setTenants] = useState<TenantDto[]>([]);
@@ -69,7 +39,6 @@ export default function BuildingsPage() {
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Create / Edit form fields
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [ruc, setRuc] = useState('');
@@ -93,7 +62,6 @@ export default function BuildingsPage() {
   const [bankHolder, setBankHolder] = useState('');
   const [bankRuc, setBankRuc] = useState('');
 
-  // Clone fields
   const [cloneSourceId, setCloneSourceId] = useState('');
   const [cloneCode, setCloneCode] = useState('');
   const [cloneName, setCloneName] = useState('');
@@ -256,42 +224,50 @@ export default function BuildingsPage() {
   }
 
   return (
-    <section>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '22px' }}>Edificios</h1>
-          <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--color-text-muted)' }}>
-            Administra los edificios, datos de administración, seguridad, horarios de atención y cuentas bancarias.
-          </p>
-        </div>
-        {isSuperAdmin && (
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {tenants.length > 0 && (
-              <button type="button" style={secondaryBtn} onClick={() => openClone(tenantId || tenants[0]!.id)}>
-                Clonar desde edificio existente
+    <section className="internal-page">
+      <ModuleHero
+        eyebrow="CARTERA MULTI-EDIFICIO"
+        title="Edificios"
+        description="Administra edificios, datos de administración, seguridad, horarios de atención y cuentas bancarias."
+        icon={Building2}
+        actions={
+          isSuperAdmin && (
+            <>
+              {tenants.length > 0 && (
+                <button
+                  type="button"
+                  className="h-btn-outline"
+                  onClick={() => openClone(tenantId || tenants[0]!.id)}
+                >
+                  <Copy size={14} /> Clonar edificio
+                </button>
+              )}
+              <button type="button" className="h-btn-dark" onClick={openCreate}>
+                <Plus size={15} /> Nuevo edificio
               </button>
-            )}
-            <button type="button" style={primaryBtn} onClick={openCreate}>
-              + Nuevo edificio
-            </button>
-          </div>
-        )}
-      </div>
+            </>
+          )
+        }
+      />
 
       {feedback && (
-        <div
-          style={{
-            marginBottom: '16px',
-            padding: '10px 14px',
-            borderRadius: 'var(--radius-sm)',
-            border: `1px solid var(--color-${feedback.type === 'ok' ? 'success' : 'danger'})`,
-            color: `var(--color-${feedback.type === 'ok' ? 'success' : 'danger'})`,
-            fontSize: '13px',
-          }}
-        >
-          {feedback.text}
-        </div>
+        <HabitatToast type={feedback.type} text={feedback.text} onClose={() => setFeedback(null)} />
       )}
+
+      <div className="h-kpi-strip">
+        <article className="h-kpi-card">
+          <span>Edificios registrados</span>
+          <strong>{String(tenants.length).padStart(2, '0')}</strong>
+          <small>en la plataforma</small>
+        </article>
+        <article className="h-kpi-card">
+          <span>Edificio activo</span>
+          <strong style={{ fontSize: '19px' }}>
+            {tenants.find((t) => t.id === tenantId)?.name ?? '—'}
+          </strong>
+          <small>contexto multi-tenant actual</small>
+        </article>
+      </div>
 
       <div style={{ display: 'grid', gap: '14px' }}>
         {tenants.map((t) => {
@@ -299,53 +275,38 @@ export default function BuildingsPage() {
           return (
             <div
               key={t.id}
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                border: active ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-md)',
-                padding: '18px 20px',
-              }}
+              className="h-panel"
+              style={active ? { borderColor: 'var(--primary)', boxShadow: '0 4px 14px rgba(238, 88, 53, 0.08)' } : undefined}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <h2 style={{ margin: 0, fontSize: '17px' }}>{t.name}</h2>
-                    <span style={{ fontSize: '12px', fontFamily: 'monospace', color: 'var(--color-text-muted)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <h2 style={{ margin: 0, fontSize: '18px', letterSpacing: '-0.3px' }}>{t.name}</h2>
+                    <span style={{ fontSize: '12px', fontFamily: 'monospace', color: 'var(--muted-foreground)' }}>
                       {t.code}
                     </span>
                     {active && (
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          padding: '2px 8px',
-                          borderRadius: '999px',
-                          backgroundColor: 'var(--color-primary)',
-                          color: '#fff',
-                        }}
-                      >
-                        Activo
-                      </span>
+                      <span className="building-score">Edificio activo</span>
                     )}
                   </div>
-                  <div style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                  <div style={{ fontSize: '12.5px', color: 'var(--muted-foreground)', marginTop: '4px' }}>
                     RUC: {t.ruc || 'Sin registrar'} · Zona horaria: {t.timezone}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {!active && (
-                    <button type="button" style={secondaryBtn} onClick={() => setTenantId(t.id)}>
+                    <button type="button" className="h-btn-outline h-btn-sm" onClick={() => setTenantId(t.id)}>
                       Seleccionar
                     </button>
                   )}
                   {canEdit && (
-                    <button type="button" style={secondaryBtn} onClick={() => openEdit(t)}>
-                      Editar datos
+                    <button type="button" className="h-btn-outline h-btn-sm" onClick={() => openEdit(t)}>
+                      <Pencil size={13} /> Editar datos
                     </button>
                   )}
                   {isSuperAdmin && (
-                    <button type="button" style={secondaryBtn} onClick={() => openClone(t.id)}>
-                      Clonar
+                    <button type="button" className="h-btn-outline h-btn-sm" onClick={() => openClone(t.id)}>
+                      <Copy size={13} /> Clonar
                     </button>
                   )}
                 </div>
@@ -355,48 +316,48 @@ export default function BuildingsPage() {
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                  gap: '12px',
+                  gap: '14px',
                   marginTop: '14px',
                   paddingTop: '14px',
-                  borderTop: '1px solid var(--color-border)',
+                  borderTop: '1px solid var(--border)',
                   fontSize: '13px',
                 }}
               >
                 <div>
-                  <div style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>Administración</div>
-                  <div style={{ fontWeight: 500 }}>
+                  <div style={{ color: 'var(--muted-foreground)', fontSize: '11px', marginBottom: '2px' }}>Administración</div>
+                  <div style={{ fontWeight: 600 }}>
                     {t.contacts?.administrator?.company || '—'}
                     {t.contacts?.administrator?.contactName ? ` (${t.contacts.administrator.contactName})` : ''}
                   </div>
-                  <div style={{ color: 'var(--color-text-muted)' }}>
+                  <div style={{ color: 'var(--muted-foreground)', fontSize: '12px' }}>
                     {t.contacts?.administrator?.phone || ''} {t.contacts?.administrator?.email ? `· ${t.contacts.administrator.email}` : ''}
                   </div>
                 </div>
                 <div>
-                  <div style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>Seguridad / Garita</div>
-                  <div style={{ fontWeight: 500 }}>{t.contacts?.security?.company || '—'}</div>
-                  <div style={{ color: 'var(--color-text-muted)' }}>{t.contacts?.security?.whatsapp || ''}</div>
+                  <div style={{ color: 'var(--muted-foreground)', fontSize: '11px', marginBottom: '2px' }}>Seguridad / Garita</div>
+                  <div style={{ fontWeight: 600 }}>{t.contacts?.security?.company || '—'}</div>
+                  <div style={{ color: 'var(--muted-foreground)', fontSize: '12px' }}>{t.contacts?.security?.whatsapp || ''}</div>
                 </div>
                 <div>
-                  <div style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>Horarios de oficina</div>
+                  <div style={{ color: 'var(--muted-foreground)', fontSize: '11px', marginBottom: '2px' }}>Horarios de oficina</div>
                   <div>
                     Presencial: {t.officeHours?.inPerson?.days ?? '—'} {t.officeHours?.inPerson?.open ?? ''}–{t.officeHours?.inPerson?.close ?? ''}
                   </div>
-                  <div style={{ color: 'var(--color-text-muted)' }}>
+                  <div style={{ color: 'var(--muted-foreground)', fontSize: '12px' }}>
                     WhatsApp: {t.officeHours?.phoneWhatsapp?.open ?? ''}–{t.officeHours?.phoneWhatsapp?.close ?? ''}
                   </div>
                 </div>
                 <div>
-                  <div style={{ color: 'var(--color-text-muted)', fontSize: '12px' }}>Cuenta bancaria</div>
+                  <div style={{ color: 'var(--muted-foreground)', fontSize: '11px', marginBottom: '2px' }}>Cuenta bancaria</div>
                   {t.bankAccounts && t.bankAccounts.length > 0 ? (
                     <>
-                      <div style={{ fontWeight: 500 }}>
+                      <div style={{ fontWeight: 600 }}>
                         {t.bankAccounts[0]!.bank} ({t.bankAccounts[0]!.accountType})
                       </div>
-                      <div style={{ color: 'var(--color-text-muted)' }}>{t.bankAccounts[0]!.accountNumber}</div>
+                      <div style={{ color: 'var(--muted-foreground)', fontSize: '12px' }}>{t.bankAccounts[0]!.accountNumber}</div>
                     </>
                   ) : (
-                    <div style={{ color: 'var(--color-text-muted)' }}>Sin configurar</div>
+                    <div style={{ color: 'var(--muted-foreground)' }}>Sin configurar</div>
                   )}
                 </div>
               </div>
@@ -405,234 +366,173 @@ export default function BuildingsPage() {
         })}
       </div>
 
-      {(drawer === 'create' || drawer === 'edit') && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.45)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            zIndex: 50,
-          }}
-        >
-          <form
-            onSubmit={handleSaveBuilding}
-            style={{
-              width: '100%',
-              maxWidth: '520px',
-              backgroundColor: 'var(--color-surface)',
-              padding: '24px',
-              overflowY: 'auto',
-              display: 'grid',
-              gap: '14px',
-              alignContent: 'start',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, fontSize: '18px' }}>
-                {drawer === 'create' ? 'Nuevo edificio' : `Editar ${editing?.name}`}
-              </h2>
-              <button type="button" style={secondaryBtn} onClick={() => setDrawer('none')}>
-                Cerrar
-              </button>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Código único
-                <input
-                  required
-                  disabled={drawer === 'edit'}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder="ej. noah-2"
-                  style={inputStyle}
-                />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Nombre del edificio
-                <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Edificio NOAH" style={inputStyle} />
-              </label>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                RUC
-                <input value={ruc} onChange={(e) => setRuc(e.target.value)} placeholder="1790000000001" style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Zona horaria
-                <input required value={timezone} onChange={(e) => setTimezone(e.target.value)} style={inputStyle} />
-              </label>
-            </div>
-
-            <h3 style={{ margin: '8px 0 0', fontSize: '14px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
-              Administración y Seguridad
-            </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Empresa administradora
-                <input value={adminCompany} onChange={(e) => setAdminCompany(e.target.value)} placeholder="Grupo Baluarte" style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Contacto administrador
-                <input value={adminContact} onChange={(e) => setAdminContact(e.target.value)} placeholder="Arq. Damián Álvarez" style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Teléfono administración
-                <input value={adminPhone} onChange={(e) => setAdminPhone(e.target.value)} placeholder="+593984555922" style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Correo administración
-                <input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="admin@edificio.com" style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Empresa de seguridad
-                <input value={secCompany} onChange={(e) => setSecCompany(e.target.value)} placeholder="FISSEG" style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                WhatsApp garita / seguridad
-                <input value={secWhatsapp} onChange={(e) => setSecWhatsapp(e.target.value)} placeholder="+593959846694" style={inputStyle} />
-              </label>
-            </div>
-
-            <h3 style={{ margin: '8px 0 0', fontSize: '14px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
-              Horarios de atención
-            </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Presencial días
-                <input value={inPersonDays} onChange={(e) => setInPersonDays(e.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Abre
-                <input type="time" value={inPersonOpen} onChange={(e) => setInPersonOpen(e.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Cierra
-                <input type="time" value={inPersonClose} onChange={(e) => setInPersonClose(e.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                WhatsApp días
-                <input value={waDays} onChange={(e) => setWaDays(e.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Abre
-                <input type="time" value={waOpen} onChange={(e) => setWaOpen(e.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Cierra
-                <input type="time" value={waClose} onChange={(e) => setWaClose(e.target.value)} style={inputStyle} />
-              </label>
-            </div>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-              Fines de semana
-              <input value={weekends} onChange={(e) => setWeekends(e.target.value)} style={inputStyle} />
+      <HabitatDrawer
+        open={drawer === 'create' || drawer === 'edit'}
+        title={drawer === 'create' ? 'Nuevo edificio' : `Editar ${editing?.name ?? ''}`}
+        subtitle="Configura identificación, contactos de administración/seguridad, horarios y cuenta bancaria."
+        onClose={() => setDrawer('none')}
+        width={540}
+      >
+        <form onSubmit={handleSaveBuilding} style={{ display: 'grid', gap: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <label className="h-field">
+              Código único
+              <input required disabled={drawer === 'edit'} value={code} onChange={(e) => setCode(e.target.value)} placeholder="ej. noah-2" className="h-input" />
             </label>
+            <label className="h-field">
+              Nombre del edificio
+              <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Edificio NOAH" className="h-input" />
+            </label>
+            <label className="h-field">
+              RUC
+              <input value={ruc} onChange={(e) => setRuc(e.target.value)} placeholder="1790000000001" className="h-input" />
+            </label>
+            <label className="h-field">
+              Zona horaria
+              <input required value={timezone} onChange={(e) => setTimezone(e.target.value)} className="h-input" />
+            </label>
+          </div>
 
-            <h3 style={{ margin: '8px 0 0', fontSize: '14px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
-              Cuenta bancaria para transferencias
-            </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Banco
-                <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Banco Pichincha" style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Tipo de cuenta
-                <select value={bankType} onChange={(e) => setBankType(e.target.value)} style={inputStyle}>
-                  <option value="Corriente">Corriente</option>
-                  <option value="Ahorros">Ahorros</option>
-                </select>
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Número de cuenta
-                <input value={bankNumber} onChange={(e) => setBankNumber(e.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Titular / Condominio
-                <input value={bankHolder} onChange={(e) => setBankHolder(e.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px', gridColumn: '1 / -1' }}>
-                RUC / Cédula del titular
-                <input value={bankRuc} onChange={(e) => setBankRuc(e.target.value)} style={inputStyle} />
-              </label>
-            </div>
+          <h3 style={{ margin: '6px 0 0', fontSize: '13px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+            Administración y Seguridad
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <label className="h-field">
+              Empresa administradora
+              <input value={adminCompany} onChange={(e) => setAdminCompany(e.target.value)} placeholder="Grupo Baluarte" className="h-input" />
+            </label>
+            <label className="h-field">
+              Contacto administrador
+              <input value={adminContact} onChange={(e) => setAdminContact(e.target.value)} placeholder="Arq. Damián Álvarez" className="h-input" />
+            </label>
+            <label className="h-field">
+              Teléfono administración
+              <input value={adminPhone} onChange={(e) => setAdminPhone(e.target.value)} placeholder="+593984555922" className="h-input" />
+            </label>
+            <label className="h-field">
+              Correo administración
+              <input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="admin@edificio.com" className="h-input" />
+            </label>
+            <label className="h-field">
+              Empresa de seguridad
+              <input value={secCompany} onChange={(e) => setSecCompany(e.target.value)} placeholder="FISSEG" className="h-input" />
+            </label>
+            <label className="h-field">
+              WhatsApp garita / seguridad
+              <input value={secWhatsapp} onChange={(e) => setSecWhatsapp(e.target.value)} placeholder="+593959846694" className="h-input" />
+            </label>
+          </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
-              <button type="button" style={secondaryBtn} onClick={() => setDrawer('none')}>
-                Cancelar
-              </button>
-              <button type="submit" disabled={busy} style={primaryBtn}>
-                {busy ? 'Guardando...' : 'Guardar edificio'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+          <h3 style={{ margin: '6px 0 0', fontSize: '13px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+            Horarios de atención
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+            <label className="h-field">
+              Presencial días
+              <input value={inPersonDays} onChange={(e) => setInPersonDays(e.target.value)} className="h-input" />
+            </label>
+            <label className="h-field">
+              Abre
+              <input type="time" value={inPersonOpen} onChange={(e) => setInPersonOpen(e.target.value)} className="h-input" />
+            </label>
+            <label className="h-field">
+              Cierra
+              <input type="time" value={inPersonClose} onChange={(e) => setInPersonClose(e.target.value)} className="h-input" />
+            </label>
+            <label className="h-field">
+              WhatsApp días
+              <input value={waDays} onChange={(e) => setWaDays(e.target.value)} className="h-input" />
+            </label>
+            <label className="h-field">
+              Abre
+              <input type="time" value={waOpen} onChange={(e) => setWaOpen(e.target.value)} className="h-input" />
+            </label>
+            <label className="h-field">
+              Cierra
+              <input type="time" value={waClose} onChange={(e) => setWaClose(e.target.value)} className="h-input" />
+            </label>
+          </div>
+          <label className="h-field">
+            Fines de semana
+            <input value={weekends} onChange={(e) => setWeekends(e.target.value)} className="h-input" />
+          </label>
 
-      {drawer === 'clone' && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.45)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            zIndex: 50,
-          }}
-        >
-          <form
-            onSubmit={handleClone}
-            style={{
-              width: '100%',
-              maxWidth: '440px',
-              backgroundColor: 'var(--color-surface)',
-              padding: '24px',
-              display: 'grid',
-              gap: '14px',
-              alignContent: 'start',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, fontSize: '18px' }}>Clonar configuración de edificio</h2>
-              <button type="button" style={secondaryBtn} onClick={() => setDrawer('none')}>
-                Cerrar
-              </button>
-            </div>
-            <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-muted)' }}>
-              Crea un nuevo edificio copiando todas las áreas comunales, matriz de acceso, combos, tipologías, parámetros y parqueaderos.
-            </p>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-              Edificio origen
-              <select value={cloneSourceId} onChange={(e) => setCloneSourceId(e.target.value)} style={inputStyle}>
-                {tenants.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.code})
-                  </option>
-                ))}
+          <h3 style={{ margin: '6px 0 0', fontSize: '13px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+            Cuenta bancaria para transferencias
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <label className="h-field">
+              Banco
+              <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Banco Pichincha" className="h-input" />
+            </label>
+            <label className="h-field">
+              Tipo de cuenta
+              <select value={bankType} onChange={(e) => setBankType(e.target.value)} className="h-input">
+                <option value="Corriente">Corriente</option>
+                <option value="Ahorros">Ahorros</option>
               </select>
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-              Código del nuevo edificio
-              <input required value={cloneCode} onChange={(e) => setCloneCode(e.target.value)} placeholder="torre-norte" style={inputStyle} />
+            <label className="h-field">
+              Número de cuenta
+              <input value={bankNumber} onChange={(e) => setBankNumber(e.target.value)} className="h-input" />
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-              Nombre del nuevo edificio
-              <input required value={cloneName} onChange={(e) => setCloneName(e.target.value)} placeholder="Torre Norte" style={inputStyle} />
+            <label className="h-field">
+              Titular / Condominio
+              <input value={bankHolder} onChange={(e) => setBankHolder(e.target.value)} className="h-input" />
             </label>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
-              <button type="button" style={secondaryBtn} onClick={() => setDrawer('none')}>
-                Cancelar
-              </button>
-              <button type="submit" disabled={busy} style={primaryBtn}>
-                {busy ? 'Clonando...' : 'Clonar edificio'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+            <label className="h-field" style={{ gridColumn: '1 / -1' }}>
+              RUC / Cédula del titular
+              <input value={bankRuc} onChange={(e) => setBankRuc(e.target.value)} className="h-input" />
+            </label>
+          </div>
+
+          <div className="h-drawer-footer">
+            <button type="button" className="h-btn-outline" onClick={() => setDrawer('none')}>
+              Cancelar
+            </button>
+            <button type="submit" disabled={busy} className="h-btn-dark">
+              {busy ? 'Guardando...' : 'Guardar edificio'}
+            </button>
+          </div>
+        </form>
+      </HabitatDrawer>
+
+      <HabitatDrawer
+        open={drawer === 'clone'}
+        title="Clonar configuración de edificio"
+        subtitle="Copia áreas comunales, matriz de acceso, combos, tipologías, parámetros y parqueaderos."
+        onClose={() => setDrawer('none')}
+        width={450}
+      >
+        <form onSubmit={handleClone} style={{ display: 'grid', gap: '14px' }}>
+          <label className="h-field">
+            Edificio origen
+            <select value={cloneSourceId} onChange={(e) => setCloneSourceId(e.target.value)} className="h-input">
+              {tenants.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.code})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="h-field">
+            Código del nuevo edificio
+            <input required value={cloneCode} onChange={(e) => setCloneCode(e.target.value)} placeholder="torre-norte" className="h-input" />
+          </label>
+          <label className="h-field">
+            Nombre del nuevo edificio
+            <input required value={cloneName} onChange={(e) => setCloneName(e.target.value)} placeholder="Torre Norte" className="h-input" />
+          </label>
+          <div className="h-drawer-footer">
+            <button type="button" className="h-btn-outline" onClick={() => setDrawer('none')}>
+              Cancelar
+            </button>
+            <button type="submit" disabled={busy} className="h-btn-dark">
+              {busy ? 'Clonando...' : 'Clonar edificio'}
+            </button>
+          </div>
+        </form>
+      </HabitatDrawer>
     </section>
   );
 }

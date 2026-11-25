@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Pencil, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
+import { HabitatDrawer, HabitatTabs, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
 import {
   type AccessRuleDto,
   type AmenityDto,
@@ -33,50 +35,7 @@ const PERIOD_LABELS: Record<'DAY' | 'WEEK' | 'MONTH', string> = {
   MONTH: 'mes',
 };
 
-const inputStyle = {
-  padding: '9px 12px',
-  borderRadius: 'var(--radius-sm)',
-  border: '1px solid var(--color-border)',
-  backgroundColor: 'var(--color-bg)',
-  color: 'var(--color-text)',
-  fontSize: '14px',
-  width: '100%',
-} as const;
-
-const primaryBtn = {
-  padding: '9px 14px',
-  borderRadius: 'var(--radius-sm)',
-  border: 'none',
-  backgroundColor: 'var(--color-primary)',
-  color: '#ffffff',
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontSize: '13px',
-} as const;
-
-const secondaryBtn = {
-  padding: '7px 11px',
-  borderRadius: 'var(--radius-sm)',
-  border: '1px solid var(--color-border)',
-  backgroundColor: 'var(--color-surface)',
-  color: 'var(--color-text)',
-  fontWeight: 500,
-  cursor: 'pointer',
-  fontSize: '12px',
-} as const;
-
-const dangerBtn = {
-  padding: '7px 11px',
-  borderRadius: 'var(--radius-sm)',
-  border: '1px solid var(--color-danger)',
-  backgroundColor: 'transparent',
-  color: 'var(--color-danger)',
-  fontWeight: 500,
-  cursor: 'pointer',
-  fontSize: '12px',
-} as const;
-
-type TabKey = 'settings' | 'amenities' | 'matrix' | 'combos' | 'unitTypes' | 'parking';
+type TabKey = 'settings' | 'amenities' | 'matrix' | 'unitTypes' | 'combos' | 'parking';
 
 function centsToDollars(cents: number): string {
   return (cents / 100).toFixed(2);
@@ -98,7 +57,6 @@ export default function BuildingConfigPage() {
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Settings editable state
   const [feePerSqm, setFeePerSqm] = useState('3.00');
   const [depositDollars, setDepositDollars] = useState('200.00');
   const [arrearsTolerance, setArrearsTolerance] = useState('2');
@@ -112,13 +70,11 @@ export default function BuildingConfigPage() {
   const [cancelMinHours, setCancelMinHours] = useState('24');
   const [cancelCleaning, setCancelCleaning] = useState<'NON_REFUNDABLE' | 'REFUNDABLE' | 'CREDIT'>('NON_REFUNDABLE');
 
-  // Parking editable state
   const [parkingSpots, setParkingSpots] = useState('4');
   const [parkingFreeMins, setParkingFreeMins] = useState('180');
   const [parkingOvertimeDollars, setParkingOvertimeDollars] = useState('2.00');
   const [parkingRounding, setParkingRounding] = useState('CEIL_HOUR');
 
-  // Amenity drawer state
   const [amenityDrawer, setAmenityDrawer] = useState<'none' | 'create' | 'edit'>('none');
   const [amCode, setAmCode] = useState('');
   const [amName, setAmName] = useState('');
@@ -136,14 +92,12 @@ export default function BuildingConfigPage() {
   const [amCleaningDollars, setAmCleaningDollars] = useState('0.00');
   const [amHasReader, setAmHasReader] = useState(true);
 
-  // UnitType drawer state
   const [utDrawer, setUtDrawer] = useState<'none' | 'create' | 'edit'>('none');
   const [utCode, setUtCode] = useState('');
   const [utName, setUtName] = useState('');
   const [utBedrooms, setUtBedrooms] = useState('1');
   const [utGuests, setUtGuests] = useState('2');
 
-  // Combo drawer state
   const [comboDrawer, setComboDrawer] = useState(false);
   const [comboAmenityIds, setComboAmenityIds] = useState<string[]>([]);
   const [comboFeeDollars, setComboFeeDollars] = useState('50.00');
@@ -428,204 +382,107 @@ export default function BuildingConfigPage() {
   const paidAmenities = amenities.filter((a) => a.cleaningFeeCents > 0);
 
   return (
-    <section>
-      <div style={{ marginBottom: '20px' }}>
-        <h1 style={{ margin: 0, fontSize: '22px' }}>Configurador del edificio</h1>
-        <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--color-text-muted)' }}>
-          Todos los parámetros, áreas, tarifas y reglas del reglamento se configuran por edificio sin tocar código.
-        </p>
-      </div>
+    <section className="internal-page">
+      <ModuleHero
+        eyebrow="REGLAMENTO PARAMETRIZABLE"
+        title="Configurador del edificio"
+        description="Define alícuota por m², áreas comunales, matriz de acceso por rol, tipologías, combos de limpieza y parqueaderos."
+        icon={SlidersHorizontal}
+        actions={
+          canEdit &&
+          (tab === 'amenities' ? (
+            <button type="button" className="h-btn-dark" onClick={openCreateAmenity}>
+              <Plus size={15} /> Nueva área comunal
+            </button>
+          ) : tab === 'unitTypes' ? (
+            <button type="button" className="h-btn-dark" onClick={openCreateUnitType}>
+              <Plus size={15} /> Nueva tipología
+            </button>
+          ) : tab === 'combos' ? (
+            <button type="button" className="h-btn-dark" onClick={() => setComboDrawer(true)}>
+              <Plus size={15} /> Nuevo combo
+            </button>
+          ) : null)
+        }
+      />
 
-      <nav style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-        {(
-          [
-            ['settings', 'Parámetros y Alícuota'],
-            ['amenities', `Áreas comunales (${amenities.length})`],
-            ['matrix', 'Matriz de acceso'],
-            ['unitTypes', `Tipologías (${unitTypes.length})`],
-            ['combos', `Combos limpieza (${combos.length})`],
-            ['parking', 'Parqueaderos'],
-          ] as Array<[TabKey, string]>
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setTab(key)}
-            style={{
-              padding: '8px 14px',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--color-border)',
-              backgroundColor: tab === key ? 'var(--color-primary)' : 'var(--color-surface)',
-              color: tab === key ? '#ffffff' : 'var(--color-text)',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: 600,
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
+      <HabitatTabs
+        active={tab}
+        onChange={setTab}
+        items={[
+          { key: 'settings', label: 'Parámetros y Alícuota' },
+          { key: 'amenities', label: `Áreas comunales (${amenities.length})` },
+          { key: 'matrix', label: 'Matriz de acceso' },
+          { key: 'unitTypes', label: `Tipologías (${unitTypes.length})` },
+          { key: 'combos', label: `Combos (${combos.length})` },
+          { key: 'parking', label: 'Parqueaderos' },
+        ]}
+      />
 
       {feedback && (
-        <div
-          style={{
-            marginBottom: '16px',
-            padding: '10px 14px',
-            borderRadius: 'var(--radius-sm)',
-            border: `1px solid var(--color-${feedback.type === 'ok' ? 'success' : 'danger'})`,
-            color: `var(--color-${feedback.type === 'ok' ? 'success' : 'danger'})`,
-            fontSize: '13px',
-          }}
-        >
-          {feedback.text}
-        </div>
+        <HabitatToast type={feedback.type} text={feedback.text} onClose={() => setFeedback(null)} />
       )}
 
       {tab === 'settings' && settings && (
-        <form
-          onSubmit={handleSaveSettings}
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-md)',
-            padding: '22px',
-            display: 'grid',
-            gap: '18px',
-          }}
-        >
+        <form onSubmit={handleSaveSettings} className="h-panel" style={{ display: 'grid', gap: '18px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Costo de alícuota por m² (USD / m²)
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                disabled={!canEdit}
-                value={feePerSqm}
-                onChange={(e) => setFeePerSqm(e.target.value)}
-                style={inputStyle}
-              />
-              <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                Se usa para calcular automáticamente la alícuota de cada unidad según su metraje.
+              <input type="number" step="0.01" min="0" disabled={!canEdit} value={feePerSqm} onChange={(e) => setFeePerSqm(e.target.value)} className="h-input" />
+              <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', fontWeight: 400 }}>
+                Calcula automáticamente la alícuota mensual de cada unidad según su metraje.
               </span>
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Garantía requerida (USD)
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                disabled={!canEdit}
-                value={depositDollars}
-                onChange={(e) => setDepositDollars(e.target.value)}
-                style={inputStyle}
-              />
+              <input type="number" step="0.01" min="0" disabled={!canEdit} value={depositDollars} onChange={(e) => setDepositDollars(e.target.value)} className="h-input" />
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Tolerancia de mora (meses impagos)
-              <input
-                type="number"
-                min="0"
-                disabled={!canEdit}
-                value={arrearsTolerance}
-                onChange={(e) => setArrearsTolerance(e.target.value)}
-                style={inputStyle}
-              />
+              <input type="number" min="0" disabled={!canEdit} value={arrearsTolerance} onChange={(e) => setArrearsTolerance(e.target.value)} className="h-input" />
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Invitado extra declarado (USD)
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                disabled={!canEdit}
-                value={extraDeclared}
-                onChange={(e) => setExtraDeclared(e.target.value)}
-                style={inputStyle}
-              />
+              <input type="number" step="0.01" min="0" disabled={!canEdit} value={extraDeclared} onChange={(e) => setExtraDeclared(e.target.value)} className="h-input" />
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Invitado extra no declarado / multa (USD)
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                disabled={!canEdit}
-                value={extraUndeclared}
-                onChange={(e) => setExtraUndeclared(e.target.value)}
-                style={inputStyle}
-              />
+              <input type="number" step="0.01" min="0" disabled={!canEdit} value={extraUndeclared} onChange={(e) => setExtraUndeclared(e.target.value)} className="h-input" />
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Plazo envío comprobante limpieza (min)
-              <input
-                type="number"
-                min="1"
-                disabled={!canEdit}
-                value={proofDeadline}
-                onChange={(e) => setProofDeadline(e.target.value)}
-                style={inputStyle}
-              />
+              <input type="number" min="1" disabled={!canEdit} value={proofDeadline} onChange={(e) => setProofDeadline(e.target.value)} className="h-input" />
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Margen de entrada QR antes del inicio (min)
-              <input
-                type="number"
-                min="0"
-                disabled={!canEdit}
-                value={entryMargin}
-                onChange={(e) => setEntryMargin(e.target.value)}
-                style={inputStyle}
-              />
+              <input type="number" min="0" disabled={!canEdit} value={entryMargin} onChange={(e) => setEntryMargin(e.target.value)} className="h-input" />
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Anticipación general de reserva (horas)
-              <input
-                type="number"
-                min="0"
-                disabled={!canEdit}
-                value={generalAdvance}
-                onChange={(e) => setGeneralAdvance(e.target.value)}
-                style={inputStyle}
-              />
+              <input type="number" min="0" disabled={!canEdit} value={generalAdvance} onChange={(e) => setGeneralAdvance(e.target.value)} className="h-input" />
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Anticipación aviso corto áreas compartidas (min)
-              <input
-                type="number"
-                min="0"
-                disabled={!canEdit}
-                value={shortNotice}
-                onChange={(e) => setShortNotice(e.target.value)}
-                style={inputStyle}
-              />
+              <input type="number" min="0" disabled={!canEdit} value={shortNotice} onChange={(e) => setShortNotice(e.target.value)} className="h-input" />
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Inicio de semana para frecuencias
-              <select disabled={!canEdit} value={weekStart} onChange={(e) => setWeekStart(e.target.value)} style={inputStyle}>
+              <select disabled={!canEdit} value={weekStart} onChange={(e) => setWeekStart(e.target.value)} className="h-input">
                 <option value="MONDAY">Lunes</option>
                 <option value="SUNDAY">Domingo</option>
               </select>
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Cancelación sin penalidad (horas antes)
-              <input
-                type="number"
-                min="0"
-                disabled={!canEdit}
-                value={cancelMinHours}
-                onChange={(e) => setCancelMinHours(e.target.value)}
-                style={inputStyle}
-              />
+              <input type="number" min="0" disabled={!canEdit} value={cancelMinHours} onChange={(e) => setCancelMinHours(e.target.value)} className="h-input" />
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Tarifa de limpieza al cancelar
               <select
                 disabled={!canEdit}
                 value={cancelCleaning}
                 onChange={(e) => setCancelCleaning(e.target.value as 'NON_REFUNDABLE' | 'REFUNDABLE' | 'CREDIT')}
-                style={inputStyle}
+                className="h-input"
               >
                 <option value="NON_REFUNDABLE">No reembolsable (Manual NOAH)</option>
                 <option value="CREDIT">Crédito a favor</option>
@@ -633,10 +490,9 @@ export default function BuildingConfigPage() {
               </select>
             </label>
           </div>
-
           {canEdit && (
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="submit" disabled={busy} style={primaryBtn}>
+              <button type="submit" disabled={busy} className="h-btn-dark">
                 {busy ? 'Guardando...' : 'Guardar parámetros'}
               </button>
             </div>
@@ -645,78 +501,63 @@ export default function BuildingConfigPage() {
       )}
 
       {tab === 'amenities' && (
-        <div>
-          {canEdit && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-              <button type="button" style={primaryBtn} onClick={openCreateAmenity}>
-                + Nueva área comunal
-              </button>
-            </div>
-          )}
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)' }}>
-              <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-                  <th style={{ padding: '12px' }}>Área</th>
-                  <th style={{ padding: '12px' }}>Aforo</th>
-                  <th style={{ padding: '12px' }}>Duración</th>
-                  <th style={{ padding: '12px' }}>Horario</th>
-                  <th style={{ padding: '12px' }}>Frecuencia</th>
-                  <th style={{ padding: '12px' }}>Modo</th>
-                  <th style={{ padding: '12px' }}>Limpieza</th>
-                  {canEdit && <th style={{ padding: '12px', textAlign: 'right' }}>Acciones</th>}
+        <div className="h-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Área</th>
+                <th>Aforo</th>
+                <th>Duración</th>
+                <th>Horario</th>
+                <th>Frecuencia</th>
+                <th>Modo</th>
+                <th>Limpieza</th>
+                {canEdit && <th style={{ textAlign: 'right' }}>Acciones</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {amenities.map((a) => (
+                <tr key={a.id}>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{a.name}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--muted-foreground)', fontFamily: 'monospace' }}>
+                      {a.code} {a.appliesGuestQuota ? '· Cupos' : ''} {a.requiresDeposit ? '· Garantía' : ''} {a.hasReader ? '· QR' : ''}
+                    </div>
+                  </td>
+                  <td>{a.capacity} pers.</td>
+                  <td>{a.maxDurationMinutes / 60} h</td>
+                  <td>{a.schedule?.all ? `${a.schedule.all.open}–${a.schedule.all.close}` : 'Sin límite'}</td>
+                  <td>{a.frequency ? `${a.frequency.max}/${PERIOD_LABELS[a.frequency.period]}` : 'Libre'}</td>
+                  <td>
+                    <StatusBadge status={a.mode === 'EXCLUSIVE' ? 'IN_REVIEW' : 'OK'} />{' '}
+                    <span style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>{MODE_LABELS[a.mode]}</span>
+                  </td>
+                  <td>{a.cleaningFeeCents > 0 ? <Money cents={a.cleaningFeeCents} /> : '—'}</td>
+                  {canEdit && (
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button type="button" className="h-btn-outline h-btn-sm" style={{ marginRight: '6px' }} onClick={() => openEditAmenity(a)}>
+                        <Pencil size={12} /> Editar
+                      </button>
+                      <button type="button" className="h-btn-danger h-btn-sm" onClick={() => void handleDeleteAmenity(a)}>
+                        <Trash2 size={12} />
+                      </button>
+                    </td>
+                  )}
                 </tr>
-              </thead>
-              <tbody>
-                {amenities.map((a) => (
-                  <tr key={a.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                    <td style={{ padding: '12px' }}>
-                      <div style={{ fontWeight: 600 }}>{a.name}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>
-                        {a.code} {a.appliesGuestQuota ? '· Cupos' : ''} {a.requiresDeposit ? '· Garantía' : ''} {a.hasReader ? '· QR' : ''}
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px' }}>{a.capacity} pers.</td>
-                    <td style={{ padding: '12px' }}>{a.maxDurationMinutes / 60} h</td>
-                    <td style={{ padding: '12px' }}>
-                      {a.schedule?.all ? `${a.schedule.all.open}–${a.schedule.all.close}` : 'Sin límite'}
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      {a.frequency ? `${a.frequency.max}/${PERIOD_LABELS[a.frequency.period]}` : 'Libre'}
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <StatusBadge status={a.mode === 'EXCLUSIVE' ? 'IN_REVIEW' : 'OK'} />{' '}
-                      <span style={{ fontSize: '12px' }}>{MODE_LABELS[a.mode]}</span>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      {a.cleaningFeeCents > 0 ? <Money cents={a.cleaningFeeCents} /> : '—'}
-                    </td>
-                    {canEdit && (
-                      <td style={{ padding: '12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <button type="button" style={{ ...secondaryBtn, marginRight: '6px' }} onClick={() => openEditAmenity(a)}>
-                          Editar
-                        </button>
-                        <button type="button" style={dangerBtn} onClick={() => void handleDeleteAmenity(a)}>
-                          Eliminar
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
       {tab === 'matrix' && (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)' }}>
+        <div className="h-table-wrap">
+          <table>
             <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-                <th style={{ padding: '12px' }}>Área</th>
+              <tr>
+                <th>Área</th>
                 {ROLES.map((r) => (
-                  <th key={r.key} style={{ padding: '12px', textAlign: 'center' }}>
+                  <th key={r.key} style={{ textAlign: 'center' }}>
                     {r.label}
                   </th>
                 ))}
@@ -724,19 +565,20 @@ export default function BuildingConfigPage() {
             </thead>
             <tbody>
               {amenities.map((a) => (
-                <tr key={a.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                  <td style={{ padding: '12px', fontWeight: 500 }}>{a.name}</td>
+                <tr key={a.id}>
+                  <td style={{ fontWeight: 600 }}>{a.name}</td>
                   {ROLES.map((r) => {
                     const rule = a.accessRules.find((ar) => ar.occupancyRole === r.key);
                     const allowed = rule?.allowed ?? false;
                     return (
-                      <td key={r.key} style={{ padding: '12px', textAlign: 'center' }}>
+                      <td key={r.key} style={{ textAlign: 'center' }}>
                         <input
                           type="checkbox"
                           checked={allowed}
                           disabled={!canEdit}
                           onChange={() => void toggleAccess(a.id, r.key, allowed)}
                           aria-label={`${a.name} - ${r.label}`}
+                          style={{ width: '16px', height: '16px', accentColor: '#28251f', cursor: canEdit ? 'pointer' : 'default' }}
                         />
                       </td>
                     );
@@ -749,38 +591,31 @@ export default function BuildingConfigPage() {
       )}
 
       {tab === 'unitTypes' && (
-        <div>
-          {canEdit && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-              <button type="button" style={primaryBtn} onClick={openCreateUnitType}>
-                + Nueva tipología
-              </button>
-            </div>
-          )}
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)' }}>
+        <div className="h-table-wrap">
+          <table>
             <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-                <th style={{ padding: '12px' }}>Código</th>
-                <th style={{ padding: '12px' }}>Tipología</th>
-                <th style={{ padding: '12px' }}>Dormitorios</th>
-                <th style={{ padding: '12px' }}>Invitados incluidos</th>
-                {canEdit && <th style={{ padding: '12px', textAlign: 'right' }}>Acciones</th>}
+              <tr>
+                <th>Código</th>
+                <th>Tipología</th>
+                <th>Dormitorios</th>
+                <th>Invitados incluidos</th>
+                {canEdit && <th style={{ textAlign: 'right' }}>Acciones</th>}
               </tr>
             </thead>
             <tbody>
               {unitTypes.map((ut) => (
-                <tr key={ut.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                  <td style={{ padding: '12px', fontFamily: 'monospace' }}>{ut.code}</td>
-                  <td style={{ padding: '12px', fontWeight: 500 }}>{ut.name}</td>
-                  <td style={{ padding: '12px' }}>{ut.bedrooms ?? 1}</td>
-                  <td style={{ padding: '12px' }}>1 residente + {ut.includedGuests} invitados</td>
+                <tr key={ut.id}>
+                  <td style={{ fontFamily: 'monospace' }}>{ut.code}</td>
+                  <td style={{ fontWeight: 600 }}>{ut.name}</td>
+                  <td>{ut.bedrooms ?? 1}</td>
+                  <td>1 residente + {ut.includedGuests} invitados</td>
                   {canEdit && (
-                    <td style={{ padding: '12px', textAlign: 'right' }}>
-                      <button type="button" style={{ ...secondaryBtn, marginRight: '6px' }} onClick={() => openEditUnitType(ut)}>
-                        Editar
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button type="button" className="h-btn-outline h-btn-sm" style={{ marginRight: '6px' }} onClick={() => openEditUnitType(ut)}>
+                        <Pencil size={12} /> Editar
                       </button>
-                      <button type="button" style={dangerBtn} onClick={() => void handleDeleteUnitType(ut)}>
-                        Eliminar
+                      <button type="button" className="h-btn-danger h-btn-sm" onClick={() => void handleDeleteUnitType(ut)}>
+                        <Trash2 size={12} />
                       </button>
                     </td>
                   )}
@@ -792,90 +627,51 @@ export default function BuildingConfigPage() {
       )}
 
       {tab === 'combos' && (
-        <div>
-          {canEdit && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-              <button type="button" style={primaryBtn} onClick={() => setComboDrawer(true)}>
-                + Nuevo combo de limpieza
-              </button>
-            </div>
-          )}
-          <div style={{ display: 'grid', gap: '10px' }}>
-            {combos.map((c) => (
-              <div
-                key={c.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '14px 16px',
-                  backgroundColor: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius-sm)',
-                }}
-              >
-                <span>{c.amenityIds.map((id) => amenityNameById.get(id) ?? id).join(' + ')}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <strong>
-                    <Money cents={c.feeCents} />
-                  </strong>
-                  {canEdit && (
-                    <button type="button" style={dangerBtn} onClick={() => void handleDeleteCombo(c.id)}>
-                      Eliminar
-                    </button>
-                  )}
-                </div>
+        <div style={{ display: 'grid', gap: '10px' }}>
+          {combos.map((c) => (
+            <div key={c.id} className="h-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px' }}>
+              <span style={{ fontWeight: 500 }}>{c.amenityIds.map((id) => amenityNameById.get(id) ?? id).join(' + ')}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <strong style={{ fontSize: '16px' }}>
+                  <Money cents={c.feeCents} />
+                </strong>
+                {canEdit && (
+                  <button type="button" className="h-btn-danger h-btn-sm" onClick={() => void handleDeleteCombo(c.id)}>
+                    <Trash2 size={12} /> Eliminar
+                  </button>
+                )}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       )}
 
       {tab === 'parking' && parking && (
-        <form
-          onSubmit={handleSaveParking}
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-md)',
-            padding: '22px',
-            display: 'grid',
-            gap: '16px',
-            maxWidth: '640px',
-          }}
-        >
+        <form onSubmit={handleSaveParking} className="h-panel" style={{ display: 'grid', gap: '16px', maxWidth: '640px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Puestos de parqueo de visitas
-              <input type="number" min="0" disabled={!canEdit} value={parkingSpots} onChange={(e) => setParkingSpots(e.target.value)} style={inputStyle} />
+              <input type="number" min="0" disabled={!canEdit} value={parkingSpots} onChange={(e) => setParkingSpots(e.target.value)} className="h-input" />
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Tiempo gratuito (minutos)
-              <input type="number" min="0" disabled={!canEdit} value={parkingFreeMins} onChange={(e) => setParkingFreeMins(e.target.value)} style={inputStyle} />
+              <input type="number" min="0" disabled={!canEdit} value={parkingFreeMins} onChange={(e) => setParkingFreeMins(e.target.value)} className="h-input" />
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Tarifa por exceso (USD / hora)
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                disabled={!canEdit}
-                value={parkingOvertimeDollars}
-                onChange={(e) => setParkingOvertimeDollars(e.target.value)}
-                style={inputStyle}
-              />
+              <input type="number" step="0.01" min="0" disabled={!canEdit} value={parkingOvertimeDollars} onChange={(e) => setParkingOvertimeDollars(e.target.value)} className="h-input" />
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
+            <label className="h-field">
               Redondeo de exceso
-              <select disabled={!canEdit} value={parkingRounding} onChange={(e) => setParkingRounding(e.target.value)} style={inputStyle}>
-                <option value="CEIL_HOUR">Hora o fracción (redondeo hacia arriba)</option>
+              <select disabled={!canEdit} value={parkingRounding} onChange={(e) => setParkingRounding(e.target.value)} className="h-input">
+                <option value="CEIL_HOUR">Hora o fracción (hacia arriba)</option>
                 <option value="EXACT_MINUTE">Proporcional por minuto</option>
               </select>
             </label>
           </div>
           {canEdit && (
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="submit" disabled={busy} style={primaryBtn}>
+              <button type="submit" disabled={busy} className="h-btn-dark">
                 {busy ? 'Guardando...' : 'Guardar parqueaderos'}
               </button>
             </div>
@@ -883,240 +679,191 @@ export default function BuildingConfigPage() {
         </form>
       )}
 
-      {amenityDrawer !== 'none' && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', display: 'flex', justifyContent: 'flex-end', zIndex: 50 }}>
-          <form
-            onSubmit={handleSaveAmenity}
-            style={{
-              width: '100%',
-              maxWidth: '500px',
-              backgroundColor: 'var(--color-surface)',
-              padding: '24px',
-              overflowY: 'auto',
-              display: 'grid',
-              gap: '14px',
-              alignContent: 'start',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, fontSize: '18px' }}>
-                {amenityDrawer === 'create' ? 'Nueva área comunal' : `Editar ${amName}`}
-              </h2>
-              <button type="button" style={secondaryBtn} onClick={() => setAmenityDrawer('none')}>
-                Cerrar
-              </button>
-            </div>
+      <HabitatDrawer
+        open={amenityDrawer !== 'none'}
+        title={amenityDrawer === 'create' ? 'Nueva área comunal' : `Editar ${amName}`}
+        subtitle="Define aforo, horarios, frecuencia, tarifa de limpieza y control de acceso."
+        onClose={() => setAmenityDrawer('none')}
+        width={520}
+      >
+        <form onSubmit={handleSaveAmenity} style={{ display: 'grid', gap: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <label className="h-field">
+              Código único
+              <input required disabled={amenityDrawer === 'edit'} value={amCode} onChange={(e) => setAmCode(e.target.value)} placeholder="BBQ_ROOFTOP" className="h-input" />
+            </label>
+            <label className="h-field">
+              Nombre del área
+              <input required value={amName} onChange={(e) => setAmName(e.target.value)} placeholder="BBQ Terraza" className="h-input" />
+            </label>
+            <label className="h-field">
+              Aforo máximo (personas)
+              <input type="number" min="1" required value={amCapacity} onChange={(e) => setAmCapacity(e.target.value)} className="h-input" />
+            </label>
+            <label className="h-field">
+              Duración máx. (min)
+              <input type="number" min="15" required value={amDuration} onChange={(e) => setAmDuration(e.target.value)} className="h-input" />
+            </label>
+            <label className="h-field">
+              Modo de uso
+              <select value={amMode} onChange={(e) => setAmMode(e.target.value as AmenityDto['mode'])} className="h-input">
+                <option value="SHARED">Compartida (por aforo)</option>
+                <option value="EXCLUSIVE">Exclusiva (1 unidad a la vez)</option>
+                <option value="FREE_USE">Uso libre (sin reserva)</option>
+              </select>
+            </label>
+            <label className="h-field">
+              Política de anticipación
+              <select value={amAdvance} onChange={(e) => setAmAdvance(e.target.value as AmenityDto['advancePolicy'])} className="h-input">
+                <option value="SHORT_NOTICE_ALLOWED">Aviso corto (1 h)</option>
+                <option value="GENERAL">General (24 h)</option>
+              </select>
+            </label>
+          </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Código único
-                <input required disabled={amenityDrawer === 'edit'} value={amCode} onChange={(e) => setAmCode(e.target.value)} placeholder="BBQ_ROOFTOP" style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Nombre del área
-                <input required value={amName} onChange={(e) => setAmName(e.target.value)} placeholder="BBQ Terraza" style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Aforo máximo (personas)
-                <input type="number" min="1" required value={amCapacity} onChange={(e) => setAmCapacity(e.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Duración máx. por reserva (min)
-                <input type="number" min="15" required value={amDuration} onChange={(e) => setAmDuration(e.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Modo de uso
-                <select value={amMode} onChange={(e) => setAmMode(e.target.value as AmenityDto['mode'])} style={inputStyle}>
-                  <option value="SHARED">Compartida (por aforo)</option>
-                  <option value="EXCLUSIVE">Exclusiva (1 unidad a la vez)</option>
-                  <option value="FREE_USE">Uso libre (sin reserva)</option>
-                </select>
-              </label>
-              <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                Política de anticipación
-                <select value={amAdvance} onChange={(e) => setAmAdvance(e.target.value as AmenityDto['advancePolicy'])} style={inputStyle}>
-                  <option value="SHORT_NOTICE_ALLOWED">Aviso corto (1 h)</option>
-                  <option value="GENERAL">General (24 h)</option>
-                </select>
-              </label>
-            </div>
-
-            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '12px', display: 'grid', gap: '10px' }}>
-              <label style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input type="checkbox" checked={amHasSchedule} onChange={(e) => setAmHasSchedule(e.target.checked)} />
-                Restringir horario de apertura/cierre
-              </label>
-              {amHasSchedule && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                    Apertura
-                    <input type="time" value={amOpen} onChange={(e) => setAmOpen(e.target.value)} style={inputStyle} />
-                  </label>
-                  <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                    Cierre
-                    <input type="time" value={amClose} onChange={(e) => setAmClose(e.target.value)} style={inputStyle} />
-                  </label>
-                </div>
-              )}
-
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px', display: 'grid', gap: '10px' }}>
+            <label style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input type="checkbox" checked={amHasSchedule} onChange={(e) => setAmHasSchedule(e.target.checked)} />
+              Restringir horario de apertura/cierre
+            </label>
+            {amHasSchedule && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                  Límite de frecuencia
-                  <select value={amFreqPeriod} onChange={(e) => setAmFreqPeriod(e.target.value as 'NONE' | 'DAY' | 'WEEK' | 'MONTH')} style={inputStyle}>
-                    <option value="NONE">Sin límite</option>
-                    <option value="DAY">Por día</option>
-                    <option value="WEEK">Por semana</option>
-                    <option value="MONTH">Por mes</option>
-                  </select>
+                <label className="h-field">
+                  Apertura
+                  <input type="time" value={amOpen} onChange={(e) => setAmOpen(e.target.value)} className="h-input" />
                 </label>
-                {amFreqPeriod !== 'NONE' && (
-                  <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-                    Máx. reservas en el período
-                    <input type="number" min="1" value={amFreqMax} onChange={(e) => setAmFreqMax(e.target.value)} style={inputStyle} />
-                  </label>
-                )}
+                <label className="h-field">
+                  Cierre
+                  <input type="time" value={amClose} onChange={(e) => setAmClose(e.target.value)} className="h-input" />
+                </label>
               </div>
-            </div>
-
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-              Tarifa de limpieza (USD, 0 si es gratuita)
-              <input type="number" step="0.01" min="0" value={amCleaningDollars} onChange={(e) => setAmCleaningDollars(e.target.value)} style={inputStyle} />
-            </label>
-
-            <div style={{ display: 'grid', gap: '8px', fontSize: '13px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input type="checkbox" checked={amGuestQuota} onChange={(e) => setAmGuestQuota(e.target.checked)} />
-                Aplica cupo de invitados por tipología (cobra invitado extra)
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <label className="h-field">
+                Límite de frecuencia
+                <select value={amFreqPeriod} onChange={(e) => setAmFreqPeriod(e.target.value as 'NONE' | 'DAY' | 'WEEK' | 'MONTH')} className="h-input">
+                  <option value="NONE">Sin límite</option>
+                  <option value="DAY">Por día</option>
+                  <option value="WEEK">Por semana</option>
+                  <option value="MONTH">Por mes</option>
+                </select>
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input type="checkbox" checked={amRequiresDeposit} onChange={(e) => setAmRequiresDeposit(e.target.checked)} />
-                Requiere garantía vigente para reservar
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input type="checkbox" checked={amHasReader} onChange={(e) => setAmHasReader(e.target.checked)} />
-                Tiene lector QR / control de acceso Hikvision
-              </label>
+              {amFreqPeriod !== 'NONE' && (
+                <label className="h-field">
+                  Máx. reservas
+                  <input type="number" min="1" value={amFreqMax} onChange={(e) => setAmFreqMax(e.target.value)} className="h-input" />
+                </label>
+              )}
             </div>
+          </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
-              <button type="button" style={secondaryBtn} onClick={() => setAmenityDrawer('none')}>
-                Cancelar
-              </button>
-              <button type="submit" disabled={busy} style={primaryBtn}>
-                {busy ? 'Guardando...' : 'Guardar área'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+          <label className="h-field">
+            Tarifa de limpieza (USD, 0 si es gratuita)
+            <input type="number" step="0.01" min="0" value={amCleaningDollars} onChange={(e) => setAmCleaningDollars(e.target.value)} className="h-input" />
+          </label>
 
-      {utDrawer !== 'none' && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', display: 'flex', justifyContent: 'flex-end', zIndex: 50 }}>
-          <form
-            onSubmit={handleSaveUnitType}
-            style={{
-              width: '100%',
-              maxWidth: '420px',
-              backgroundColor: 'var(--color-surface)',
-              padding: '24px',
-              display: 'grid',
-              gap: '14px',
-              alignContent: 'start',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, fontSize: '18px' }}>
-                {utDrawer === 'create' ? 'Nueva tipología' : `Editar ${utName}`}
-              </h2>
-              <button type="button" style={secondaryBtn} onClick={() => setUtDrawer('none')}>
-                Cerrar
-              </button>
-            </div>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-              Código
-              <input required disabled={utDrawer === 'edit'} value={utCode} onChange={(e) => setUtCode(e.target.value)} placeholder="PENTHOUSE" style={inputStyle} />
+          <div style={{ display: 'grid', gap: '8px', fontSize: '13px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input type="checkbox" checked={amGuestQuota} onChange={(e) => setAmGuestQuota(e.target.checked)} />
+              Aplica cupo de invitados por tipología
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-              Nombre
-              <input required value={utName} onChange={(e) => setUtName(e.target.value)} placeholder="Penthouse (4 dormitorios)" style={inputStyle} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input type="checkbox" checked={amRequiresDeposit} onChange={(e) => setAmRequiresDeposit(e.target.checked)} />
+              Requiere garantía vigente para reservar
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-              Número de dormitorios
-              <input type="number" min="0" required value={utBedrooms} onChange={(e) => setUtBedrooms(e.target.value)} style={inputStyle} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input type="checkbox" checked={amHasReader} onChange={(e) => setAmHasReader(e.target.checked)} />
+              Tiene lector QR / control de acceso Hikvision
             </label>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-              Invitados incluidos sin costo adicional
-              <input type="number" min="0" required value={utGuests} onChange={(e) => setUtGuests(e.target.value)} style={inputStyle} />
-            </label>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
-              <button type="button" style={secondaryBtn} onClick={() => setUtDrawer('none')}>
-                Cancelar
-              </button>
-              <button type="submit" disabled={busy} style={primaryBtn}>
-                {busy ? 'Guardando...' : 'Guardar tipología'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+          </div>
 
-      {comboDrawer && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', display: 'flex', justifyContent: 'flex-end', zIndex: 50 }}>
-          <form
-            onSubmit={handleCreateCombo}
-            style={{
-              width: '100%',
-              maxWidth: '440px',
-              backgroundColor: 'var(--color-surface)',
-              padding: '24px',
-              display: 'grid',
-              gap: '14px',
-              alignContent: 'start',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, fontSize: '18px' }}>Nuevo combo de limpieza</h2>
-              <button type="button" style={secondaryBtn} onClick={() => setComboDrawer(false)}>
-                Cerrar
-              </button>
-            </div>
-            <p style={{ margin: 0, fontSize: '13px', color: 'var(--color-text-muted)' }}>
-              Selecciona 2 o más áreas con tarifa de limpieza y define el precio especial combinado.
-            </p>
-            <div style={{ display: 'grid', gap: '8px' }}>
-              {paidAmenities.map((a) => {
-                const checked = comboAmenityIds.includes(a.id);
-                return (
-                  <label key={a.id} style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() =>
-                        setComboAmenityIds((prev) =>
-                          checked ? prev.filter((id) => id !== a.id) : [...prev, a.id],
-                        )
-                      }
-                    />
-                    {a.name} (<Money cents={a.cleaningFeeCents} />)
-                  </label>
-                );
-              })}
-            </div>
-            <label style={{ fontSize: '13px', display: 'grid', gap: '4px' }}>
-              Tarifa total del combo (USD)
-              <input type="number" step="0.01" min="1" required value={comboFeeDollars} onChange={(e) => setComboFeeDollars(e.target.value)} style={inputStyle} />
-            </label>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
-              <button type="button" style={secondaryBtn} onClick={() => setComboDrawer(false)}>
-                Cancelar
-              </button>
-              <button type="submit" disabled={busy || comboAmenityIds.length < 2} style={primaryBtn}>
-                {busy ? 'Guardando...' : 'Crear combo'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+          <div className="h-drawer-footer">
+            <button type="button" className="h-btn-outline" onClick={() => setAmenityDrawer('none')}>
+              Cancelar
+            </button>
+            <button type="submit" disabled={busy} className="h-btn-dark">
+              {busy ? 'Guardando...' : 'Guardar área'}
+            </button>
+          </div>
+        </form>
+      </HabitatDrawer>
+
+      <HabitatDrawer
+        open={utDrawer !== 'none'}
+        title={utDrawer === 'create' ? 'Nueva tipología' : `Editar ${utName}`}
+        subtitle="Define el número de dormitorios y el cupo de invitados incluidos."
+        onClose={() => setUtDrawer('none')}
+        width={430}
+      >
+        <form onSubmit={handleSaveUnitType} style={{ display: 'grid', gap: '14px' }}>
+          <label className="h-field">
+            Código
+            <input required disabled={utDrawer === 'edit'} value={utCode} onChange={(e) => setUtCode(e.target.value)} placeholder="PENTHOUSE" className="h-input" />
+          </label>
+          <label className="h-field">
+            Nombre
+            <input required value={utName} onChange={(e) => setUtName(e.target.value)} placeholder="Penthouse (4 dormitorios)" className="h-input" />
+          </label>
+          <label className="h-field">
+            Número de dormitorios
+            <input type="number" min="0" required value={utBedrooms} onChange={(e) => setUtBedrooms(e.target.value)} className="h-input" />
+          </label>
+          <label className="h-field">
+            Invitados incluidos sin costo adicional
+            <input type="number" min="0" required value={utGuests} onChange={(e) => setUtGuests(e.target.value)} className="h-input" />
+          </label>
+          <div className="h-drawer-footer">
+            <button type="button" className="h-btn-outline" onClick={() => setUtDrawer('none')}>
+              Cancelar
+            </button>
+            <button type="submit" disabled={busy} className="h-btn-dark">
+              {busy ? 'Guardando...' : 'Guardar tipología'}
+            </button>
+          </div>
+        </form>
+      </HabitatDrawer>
+
+      <HabitatDrawer
+        open={comboDrawer}
+        title="Nuevo combo de limpieza"
+        subtitle="Selecciona 2 o más áreas con tarifa de limpieza y define el precio combinado."
+        onClose={() => setComboDrawer(false)}
+        width={440}
+      >
+        <form onSubmit={handleCreateCombo} style={{ display: 'grid', gap: '14px' }}>
+          <div style={{ display: 'grid', gap: '8px' }}>
+            {paidAmenities.map((a) => {
+              const checked = comboAmenityIds.includes(a.id);
+              return (
+                <label key={a.id} style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() =>
+                      setComboAmenityIds((prev) =>
+                        checked ? prev.filter((id) => id !== a.id) : [...prev, a.id],
+                      )
+                    }
+                  />
+                  {a.name} (<Money cents={a.cleaningFeeCents} />)
+                </label>
+              );
+            })}
+          </div>
+          <label className="h-field">
+            Tarifa total del combo (USD)
+            <input type="number" step="0.01" min="1" required value={comboFeeDollars} onChange={(e) => setComboFeeDollars(e.target.value)} className="h-input" />
+          </label>
+          <div className="h-drawer-footer">
+            <button type="button" className="h-btn-outline" onClick={() => setComboDrawer(false)}>
+              Cancelar
+            </button>
+            <button type="submit" disabled={busy || comboAmenityIds.length < 2} className="h-btn-dark">
+              {busy ? 'Guardando...' : 'Crear combo'}
+            </button>
+          </div>
+        </form>
+      </HabitatDrawer>
     </section>
   );
 }

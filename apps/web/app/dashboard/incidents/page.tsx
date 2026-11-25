@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Plus, Wrench } from 'lucide-react';
 import { StatusBadge } from '@noah/ui';
+import { HabitatDrawer, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
 
 interface TicketRow {
@@ -13,6 +15,13 @@ interface TicketRow {
   status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
   createdAt: string;
 }
+
+const URGENCY_META: Record<string, { label: string; bg: string; fg: string }> = {
+  EMERGENCY: { label: 'Emergencia', bg: '#fae9e6', fg: '#b7544d' },
+  HIGH: { label: 'Alta', bg: '#fae9e6', fg: '#b7544d' },
+  MEDIUM: { label: 'Media', bg: '#f8f0dc', fg: '#99771f' },
+  LOW: { label: 'Baja', bg: '#e9f2ec', fg: '#52816c' },
+};
 
 export default function IncidentsPage() {
   const { me, tenantId, apiFetch } = useDashboard();
@@ -55,129 +64,152 @@ export default function IncidentsPage() {
 
   async function handleStatusChange(id: string, status: TicketRow['status']) {
     await apiFetch(`/incidents/${id}/status`, { method: 'PATCH', body: { status } });
+    setNotice('Estado del ticket actualizado.');
     await loadData();
   }
 
+  const openCount = tickets.filter((t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS').length;
+  const highCount = tickets.filter((t) => t.urgency === 'HIGH' || t.urgency === 'EMERGENCY').length;
+
   return (
-    <section>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '22px' }}>Incidencias</h1>
-          <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--color-text-muted)' }}>
-            Reportes con aviso de duplicados en 48 horas y trazabilidad de cierre.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setDrawerOpen(true)}
-          style={{
-            padding: '9px 14px',
-            borderRadius: 'var(--radius-sm)',
-            border: 'none',
-            backgroundColor: 'var(--color-primary)',
-            color: '#ffffff',
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          + Nuevo ticket
-        </button>
+    <section className="internal-page">
+      <ModuleHero
+        eyebrow="MANTENIMIENTO Y PQRS"
+        title="Incidencias"
+        description="Reportes con detección automática de duplicados en ventana de 48 horas y trazabilidad de cierre."
+        icon={Wrench}
+        actions={
+          <button type="button" className="h-btn-dark" onClick={() => setDrawerOpen(true)}>
+            <Plus size={15} /> Nuevo ticket
+          </button>
+        }
+      />
+
+      {notice && <HabitatToast type="ok" text={notice} onClose={() => setNotice(null)} />}
+
+      <div className="h-kpi-strip">
+        <article className="h-kpi-card">
+          <span>Abiertas / En proceso</span>
+          <strong>{String(openCount).padStart(2, '0')}</strong>
+          <small>requieren seguimiento</small>
+        </article>
+        <article className="h-kpi-card">
+          <span>Alta / Emergencia</span>
+          <strong>{String(highCount).padStart(2, '0')}</strong>
+          <small>prioridad crítica</small>
+        </article>
+        <article className="h-kpi-card">
+          <span>Total tickets</span>
+          <strong>{tickets.length}</strong>
+          <small>registrados en el edificio</small>
+        </article>
       </div>
 
-      {notice && (
-        <div style={{ marginBottom: '14px', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-info)', color: 'var(--color-info)', fontSize: '13px' }}>
-          {notice}
+      {tickets.length === 0 ? (
+        <div className="h-panel" style={{ color: 'var(--muted-foreground)', fontSize: '13.5px' }}>
+          No hay incidencias registradas.
+        </div>
+      ) : (
+        <div className="h-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Categoría</th>
+                <th>Ubicación</th>
+                <th>Descripción</th>
+                <th>Urgencia</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tickets.map((t) => {
+                const urg = URGENCY_META[t.urgency] ?? URGENCY_META.MEDIUM!;
+                return (
+                  <tr key={t.id}>
+                    <td style={{ fontWeight: 600 }}>{t.category}</td>
+                    <td>{t.location}</td>
+                    <td style={{ maxWidth: '340px' }}>{t.description}</td>
+                    <td>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '4px 10px',
+                          borderRadius: '999px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          backgroundColor: urg.bg,
+                          color: urg.fg,
+                        }}
+                      >
+                        {urg.label}
+                      </span>
+                    </td>
+                    <td>
+                      {canChangeStatus ? (
+                        <select
+                          value={t.status}
+                          onChange={(e) => void handleStatusChange(t.id, e.target.value as TicketRow['status'])}
+                          className="h-input"
+                          style={{ padding: '6px 10px', width: 'auto', fontSize: '12.5px' }}
+                        >
+                          <option value="OPEN">Abierto</option>
+                          <option value="IN_PROGRESS">En proceso</option>
+                          <option value="RESOLVED">Resuelto</option>
+                          <option value="CLOSED">Cerrado</option>
+                        </select>
+                      ) : (
+                        <StatusBadge status={t.status === 'CLOSED' || t.status === 'RESOLVED' ? 'COMPLETED' : 'IN_REVIEW'} />
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {tickets.length === 0 ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>No hay incidencias registradas.</p>
-      ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-              <th style={{ padding: '12px' }}>Categoría</th>
-              <th style={{ padding: '12px' }}>Ubicación</th>
-              <th style={{ padding: '12px' }}>Descripción</th>
-              <th style={{ padding: '12px' }}>Urgencia</th>
-              <th style={{ padding: '12px' }}>Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tickets.map((t) => (
-              <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <td style={{ padding: '12px', fontWeight: 600 }}>{t.category}</td>
-                <td style={{ padding: '12px' }}>{t.location}</td>
-                <td style={{ padding: '12px' }}>{t.description}</td>
-                <td style={{ padding: '12px' }}>{t.urgency}</td>
-                <td style={{ padding: '12px' }}>
-                  {canChangeStatus ? (
-                    <select
-                      value={t.status}
-                      onChange={(e) => handleStatusChange(t.id, e.target.value as TicketRow['status'])}
-                      style={{ padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}
-                    >
-                      <option value="OPEN">Abierto</option>
-                      <option value="IN_PROGRESS">En proceso</option>
-                      <option value="RESOLVED">Resuelto</option>
-                      <option value="CLOSED">Cerrado</option>
-                    </select>
-                  ) : (
-                    <StatusBadge status={t.status === 'CLOSED' ? 'COMPLETED' : 'IN_REVIEW'} />
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {drawerOpen && (
-        <aside
-          style={{
-            position: 'fixed',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            width: '380px',
-            backgroundColor: 'var(--color-surface)',
-            borderLeft: '1px solid var(--color-border)',
-            padding: '24px',
-            boxShadow: '-4px 0 24px rgba(0,0,0,0.14)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ margin: 0, fontSize: '18px' }}>Reportar incidencia</h2>
-            <button type="button" onClick={() => setDrawerOpen(false)}>✕</button>
-          </div>
-          <form onSubmit={handleCreate} style={{ display: 'grid', gap: '12px' }}>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Categoría
-              <input required value={category} onChange={(e) => setCategory(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
-            </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Ubicación
-              <input required value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Ej. Ascensor 1, Piscina" style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
-            </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Urgencia
-              <select value={urgency} onChange={(e) => setUrgency(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }}>
-                <option value="LOW">Baja</option>
-                <option value="MEDIUM">Media</option>
-                <option value="HIGH">Alta</option>
-                <option value="EMERGENCY">Emergencia</option>
-              </select>
-            </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Descripción
-              <textarea required rows={4} value={description} onChange={(e) => setDescription(e.target.value)} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
-            </label>
-            <button type="submit" style={{ padding: '10px', backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 600, cursor: 'pointer' }}>
+      <HabitatDrawer
+        open={drawerOpen}
+        title="Reportar incidencia"
+        subtitle="Si existe un reporte similar en las últimas 48 h, el sistema mostrará un aviso automáticamente."
+        onClose={() => setDrawerOpen(false)}
+        width={440}
+      >
+        <form onSubmit={handleCreate} style={{ display: 'grid', gap: '14px' }}>
+          <label className="h-field">
+            Categoría
+            <input required value={category} onChange={(e) => setCategory(e.target.value)} className="h-input" />
+          </label>
+          <label className="h-field">
+            Ubicación
+            <input required value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Ej. Ascensor 1, Piscina" className="h-input" />
+          </label>
+          <label className="h-field">
+            Urgencia
+            <select value={urgency} onChange={(e) => setUrgency(e.target.value)} className="h-input">
+              <option value="LOW">Baja</option>
+              <option value="MEDIUM">Media</option>
+              <option value="HIGH">Alta</option>
+              <option value="EMERGENCY">Emergencia</option>
+            </select>
+          </label>
+          <label className="h-field">
+            Descripción
+            <textarea required rows={4} value={description} onChange={(e) => setDescription(e.target.value)} className="h-input" />
+          </label>
+          <div className="h-drawer-footer">
+            <button type="button" className="h-btn-outline" onClick={() => setDrawerOpen(false)}>
+              Cancelar
+            </button>
+            <button type="submit" className="h-btn-dark">
               Crear ticket
             </button>
-          </form>
-        </aside>
-      )}
+          </div>
+        </form>
+      </HabitatDrawer>
     </section>
   );
 }

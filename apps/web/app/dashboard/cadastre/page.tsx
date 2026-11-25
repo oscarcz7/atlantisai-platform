@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Download, KeyRound, Pencil, Plus, UserPlus, Users } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
+import { HabitatDrawer, HabitatTabs, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
 import { downloadCsv } from '../../../lib/export-csv';
 
@@ -38,16 +40,6 @@ interface SettingsSnippet {
   monthlyFeePerSqmCents: number;
 }
 
-const inputStyle = {
-  padding: '9px 12px',
-  borderRadius: 'var(--radius-sm)',
-  border: '1px solid var(--color-border)',
-  backgroundColor: 'var(--color-bg)',
-  color: 'var(--color-text)',
-  fontSize: '14px',
-  width: '100%',
-} as const;
-
 export default function CadastrePage() {
   const { me, tenantId, apiFetch } = useDashboard();
   const [tab, setTab] = useState<'units' | 'persons'>('units');
@@ -60,7 +52,6 @@ export default function CadastrePage() {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Unit form
   const [uNumber, setUNumber] = useState('');
   const [uFloor, setUFloor] = useState('1');
   const [uTypeId, setUTypeId] = useState('');
@@ -69,13 +60,11 @@ export default function CadastrePage() {
   const [uManualFee, setUManualFee] = useState(false);
   const [uFeeUsd, setUFeeUsd] = useState('0.00');
 
-  // Person form
   const [pName, setPName] = useState('');
   const [pNationalId, setPNationalId] = useState('');
   const [pPhone, setPPhone] = useState('');
   const [pEmail, setPEmail] = useState('');
 
-  // Occupancy form
   const [oUnitId, setOUnitId] = useState('');
   const [oPersonId, setOPersonId] = useState('');
   const [oRole, setORole] = useState('OWNER_RESIDENT');
@@ -136,8 +125,7 @@ export default function CadastrePage() {
     setUTypeId(u.unitTypeId);
     setUBedrooms(String(u.bedrooms ?? 1));
     setUAreaSqm(u.areaSqm !== null && u.areaSqm !== undefined ? String(u.areaSqm) : '');
-    const autoExpected =
-      u.areaSqm && feePerSqmCents > 0 ? Math.round(u.areaSqm * feePerSqmCents) : null;
+    const autoExpected = u.areaSqm && feePerSqmCents > 0 ? Math.round(u.areaSqm * feePerSqmCents) : null;
     const isManual = autoExpected === null || autoExpected !== u.monthlyFeeCents;
     setUManualFee(isManual);
     setUFeeUsd((u.monthlyFeeCents / 100).toFixed(2));
@@ -147,9 +135,7 @@ export default function CadastrePage() {
   function handleTypeChange(nextTypeId: string) {
     setUTypeId(nextTypeId);
     const found = unitTypes.find((ut) => ut.id === nextTypeId);
-    if (found) {
-      setUBedrooms(String(found.bedrooms ?? 1));
-    }
+    if (found) setUBedrooms(String(found.bedrooms ?? 1));
   }
 
   async function handleSaveUnit(e: FormEvent) {
@@ -166,16 +152,10 @@ export default function CadastrePage() {
     };
     try {
       if (editingUnit) {
-        await apiFetch(`/cadastre/units/${editingUnit.id}`, {
-          method: 'PATCH',
-          body: payload,
-        });
+        await apiFetch(`/cadastre/units/${editingUnit.id}`, { method: 'PATCH', body: payload });
         setToast(`Unidad ${uNumber} actualizada.`);
       } else {
-        await apiFetch('/cadastre/units', {
-          method: 'POST',
-          body: payload,
-        });
+        await apiFetch('/cadastre/units', { method: 'POST', body: payload });
         setToast(`Unidad ${uNumber} creada correctamente.`);
       }
       setEditingUnit(null);
@@ -233,196 +213,128 @@ export default function CadastrePage() {
     }
   }
 
+  const occupiedCount = units.filter((u) => u.occupancies.length > 0).length;
+
   return (
-    <section>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '22px' }}>Catastro y ocupaciones</h1>
-          <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--color-text-muted)' }}>
-            Unidades (metraje, dormitorios y alícuota automática a{' '}
-            <strong>
-              <Money cents={feePerSqmCents} />/m²
-            </strong>
-            ), residentes y ocupaciones.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={() =>
-              downloadCsv(
-                'catastro-unidades.csv',
-                ['Unidad', 'Piso', 'Tipología', 'Dormitorios', 'Metraje m2', 'Alícuota USD', 'Estado'],
-                units.map((u) => [
-                  u.number,
-                  u.floor,
-                  u.unitType.name,
-                  u.bedrooms ?? 1,
-                  u.areaSqm ?? '',
-                  (u.monthlyFeeCents / 100).toFixed(2),
-                  u.isActive ? 'Activa' : 'Inactiva',
-                ]),
-              )
-            }
-            style={{
-              padding: '8px 12px',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--color-border)',
-              backgroundColor: 'var(--color-surface)',
-              color: 'var(--color-text)',
-              cursor: 'pointer',
-              fontSize: '13px',
-            }}
-          >
-            Exportar CSV
-          </button>
-          {canEdit && (
-            <>
-              <button
-                type="button"
-                onClick={openCreateUnit}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: 'none',
-                  backgroundColor: 'var(--color-primary)',
-                  color: '#ffffff',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                }}
-              >
-                + Unidad
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  setDrawer('person');
-                }}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--color-primary)',
-                  backgroundColor: 'transparent',
-                  color: 'var(--color-primary)',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                }}
-              >
-                + Persona
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  setDrawer('occupancy');
-                }}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--color-border)',
-                  backgroundColor: 'var(--color-surface)',
-                  color: 'var(--color-text)',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                }}
-              >
-                + Ocupación
-              </button>
-            </>
-          )}
-        </div>
+    <section className="internal-page">
+      <ModuleHero
+        eyebrow="DIRECTORIO Y PROPIEDADES"
+        title="Catastro y ocupaciones"
+        description="Administra unidades con metraje y dormitorios (alícuota automática por m²), residentes cifrados y vigencias."
+        icon={Users}
+        actions={
+          <>
+            <button
+              type="button"
+              className="h-btn-outline"
+              onClick={() =>
+                downloadCsv(
+                  'catastro-unidades.csv',
+                  ['Unidad', 'Piso', 'Tipología', 'Dormitorios', 'Metraje m2', 'Alícuota USD', 'Estado'],
+                  units.map((u) => [
+                    u.number,
+                    u.floor,
+                    u.unitType.name,
+                    u.bedrooms ?? 1,
+                    u.areaSqm ?? '',
+                    (u.monthlyFeeCents / 100).toFixed(2),
+                    u.isActive ? 'Activa' : 'Inactiva',
+                  ]),
+                )
+              }
+            >
+              <Download size={14} /> CSV
+            </button>
+            {canEdit && (
+              <>
+                <button type="button" className="h-btn-outline" onClick={() => { setError(null); setDrawer('occupancy'); }}>
+                  <KeyRound size={14} /> + Ocupación
+                </button>
+                <button type="button" className="h-btn-outline" onClick={() => { setError(null); setDrawer('person'); }}>
+                  <UserPlus size={14} /> + Persona
+                </button>
+                <button type="button" className="h-btn-dark" onClick={openCreateUnit}>
+                  <Plus size={15} /> Nueva unidad
+                </button>
+              </>
+            )}
+          </>
+        }
+      />
+
+      {toast && <HabitatToast type="ok" text={toast} onClose={() => setToast(null)} />}
+
+      <div className="h-kpi-strip">
+        <article className="h-kpi-card">
+          <span>Unidades</span>
+          <strong>{units.length}</strong>
+          <small>{occupiedCount} con ocupantes activos</small>
+        </article>
+        <article className="h-kpi-card">
+          <span>Personas registradas</span>
+          <strong>{persons.length}</strong>
+          <small>cédula cifrada + WhatsApp E.164</small>
+        </article>
+        <article className="h-kpi-card">
+          <span>Tarifa alícuota base</span>
+          <strong>
+            <Money cents={feePerSqmCents} />
+          </strong>
+          <small>por metro cuadrado (m²)</small>
+        </article>
       </div>
 
-      {toast && (
-        <div style={{ marginBottom: '14px', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-success)', color: 'var(--color-success)', fontSize: '13px' }}>
-          {toast}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-        <button
-          type="button"
-          onClick={() => setTab('units')}
-          style={{
-            padding: '8px 14px',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--color-border)',
-            backgroundColor: tab === 'units' ? 'var(--color-primary)' : 'var(--color-surface)',
-            color: tab === 'units' ? '#ffffff' : 'var(--color-text)',
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
-        >
-          Unidades ({units.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('persons')}
-          style={{
-            padding: '8px 14px',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--color-border)',
-            backgroundColor: tab === 'persons' ? 'var(--color-primary)' : 'var(--color-surface)',
-            color: tab === 'persons' ? '#ffffff' : 'var(--color-text)',
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
-        >
-          Personas ({persons.length})
-        </button>
-      </div>
+      <HabitatTabs
+        active={tab}
+        onChange={setTab}
+        items={[
+          { key: 'units', label: `Unidades (${units.length})` },
+          { key: 'persons', label: `Personas (${persons.length})` },
+        ]}
+      />
 
       {tab === 'units' ? (
         units.length === 0 ? (
-          <p style={{ color: 'var(--color-text-muted)' }}>Aún no hay unidades registradas. Crea la primera con «+ Unidad».</p>
+          <div className="h-panel" style={{ color: 'var(--muted-foreground)', fontSize: '13.5px' }}>
+            Aún no hay unidades registradas. Crea la primera con «Nueva unidad».
+          </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)' }}>
+          <div className="h-table-wrap">
+            <table>
               <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-                  <th style={{ padding: '12px' }}>Unidad</th>
-                  <th style={{ padding: '12px' }}>Piso</th>
-                  <th style={{ padding: '12px' }}>Tipología</th>
-                  <th style={{ padding: '12px' }}>Dorm.</th>
-                  <th style={{ padding: '12px' }}>Metraje</th>
-                  <th style={{ padding: '12px' }}>Alícuota</th>
-                  <th style={{ padding: '12px' }}>Ocupantes</th>
-                  <th style={{ padding: '12px' }}>Estado</th>
-                  {canEdit && <th style={{ padding: '12px', textAlign: 'right' }}>Acciones</th>}
+                <tr>
+                  <th>Unidad</th>
+                  <th>Piso</th>
+                  <th>Tipología</th>
+                  <th>Dorm.</th>
+                  <th>Metraje</th>
+                  <th>Alícuota</th>
+                  <th>Ocupantes</th>
+                  <th>Estado</th>
+                  {canEdit && <th style={{ textAlign: 'right' }}>Acciones</th>}
                 </tr>
               </thead>
               <tbody>
                 {units.map((u) => (
-                  <tr key={u.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                    <td style={{ padding: '12px', fontWeight: 600 }}>{u.number}</td>
-                    <td style={{ padding: '12px' }}>{u.floor}</td>
-                    <td style={{ padding: '12px' }}>{u.unitType.name}</td>
-                    <td style={{ padding: '12px' }}>{u.bedrooms ?? 1}</td>
-                    <td style={{ padding: '12px' }}>{u.areaSqm ? `${u.areaSqm} m²` : '—'}</td>
-                    <td style={{ padding: '12px' }}><Money cents={u.monthlyFeeCents} /></td>
-                    <td style={{ padding: '12px', fontSize: '13px' }}>
+                  <tr key={u.id}>
+                    <td style={{ fontWeight: 600 }}>{u.number}</td>
+                    <td>{u.floor}</td>
+                    <td>{u.unitType.name}</td>
+                    <td>{u.bedrooms ?? 1}</td>
+                    <td>{u.areaSqm ? `${u.areaSqm} m²` : '—'}</td>
+                    <td>
+                      <Money cents={u.monthlyFeeCents} />
+                    </td>
+                    <td style={{ fontSize: '12.5px' }}>
                       {u.occupancies.length > 0 ? u.occupancies.map((o) => `${o.person.fullName} (${o.role})`).join(', ') : '—'}
                     </td>
-                    <td style={{ padding: '12px' }}><StatusBadge status={u.isActive ? 'OK' : 'CANCELLED'} /></td>
+                    <td>
+                      <StatusBadge status={u.isActive ? 'OK' : 'CANCELLED'} />
+                    </td>
                     {canEdit && (
-                      <td style={{ padding: '12px', textAlign: 'right' }}>
-                        <button
-                          type="button"
-                          onClick={() => openEditUnit(u)}
-                          style={{
-                            padding: '6px 10px',
-                            borderRadius: 'var(--radius-sm)',
-                            border: '1px solid var(--color-border)',
-                            backgroundColor: 'var(--color-bg)',
-                            color: 'var(--color-text)',
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                          }}
-                        >
-                          Editar
+                      <td style={{ textAlign: 'right' }}>
+                        <button type="button" className="h-btn-outline h-btn-sm" onClick={() => openEditUnit(u)}>
+                          <Pencil size={12} /> Editar
                         </button>
                       </td>
                     )}
@@ -433,217 +345,217 @@ export default function CadastrePage() {
           </div>
         )
       ) : persons.length === 0 ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>Aún no hay personas registradas.</p>
+        <div className="h-panel" style={{ color: 'var(--muted-foreground)', fontSize: '13.5px' }}>
+          Aún no hay personas registradas.
+        </div>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-              <th style={{ padding: '12px' }}>Nombre</th>
-              <th style={{ padding: '12px' }}>Cédula (enmascarada)</th>
-              <th style={{ padding: '12px' }}>WhatsApp</th>
-              <th style={{ padding: '12px' }}>Correo</th>
-            </tr>
-          </thead>
-          <tbody>
-            {persons.map((p) => (
-              <tr key={p.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <td style={{ padding: '12px', fontWeight: 500 }}>{p.fullName}</td>
-                <td style={{ padding: '12px', fontFamily: 'monospace' }}>{p.nationalId}</td>
-                <td style={{ padding: '12px' }}>{p.waPhone}</td>
-                <td style={{ padding: '12px' }}>{p.email ?? '—'}</td>
+        <div className="h-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Cédula (enmascarada)</th>
+                <th>WhatsApp</th>
+                <th>Correo</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {persons.map((p) => (
+                <tr key={p.id}>
+                  <td style={{ fontWeight: 600 }}>{p.fullName}</td>
+                  <td style={{ fontFamily: 'monospace' }}>{p.nationalId}</td>
+                  <td>{p.waPhone}</td>
+                  <td>{p.email ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      {drawer && (
-        <aside
-          style={{
-            position: 'fixed',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            width: '430px',
-            maxWidth: '100%',
-            backgroundColor: 'var(--color-surface)',
-            borderLeft: '1px solid var(--color-border)',
-            padding: '24px',
-            boxShadow: '-4px 0 24px rgba(0,0,0,0.14)',
-            overflowY: 'auto',
-            zIndex: 50,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ margin: 0, fontSize: '18px' }}>
-              {drawer === 'unit'
-                ? editingUnit
-                  ? `Editar unidad ${editingUnit.number}`
-                  : 'Nueva unidad'
-                : drawer === 'person'
-                  ? 'Nueva persona'
-                  : 'Vincular ocupación'}
-            </h2>
-            <button type="button" onClick={() => setDrawer(null)}>✕</button>
+      <HabitatDrawer
+        open={drawer === 'unit'}
+        title={editingUnit ? `Editar unidad ${editingUnit.number}` : 'Nueva unidad'}
+        subtitle="La alícuota se calcula automáticamente multiplicando el metraje por la tarifa/m² del edificio."
+        onClose={() => setDrawer(null)}
+        width={470}
+      >
+        {error && <HabitatToast type="err" text={error} onClose={() => setError(null)} />}
+        <form onSubmit={handleSaveUnit} style={{ display: 'grid', gap: '14px', marginTop: error ? '12px' : 0 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <label className="h-field">
+              Número de unidad (ej. 402)
+              <input required value={uNumber} onChange={(e) => setUNumber(e.target.value)} className="h-input" />
+            </label>
+            <label className="h-field">
+              Piso
+              <input type="number" required value={uFloor} onChange={(e) => setUFloor(e.target.value)} className="h-input" />
+            </label>
+          </div>
+          <label className="h-field">
+            Tipología
+            <select value={uTypeId} onChange={(e) => handleTypeChange(e.target.value)} className="h-input">
+              {unitTypes.map((ut) => (
+                <option key={ut.id} value={ut.id}>
+                  {ut.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <label className="h-field">
+              Dormitorios
+              <input type="number" min="0" required value={uBedrooms} onChange={(e) => setUBedrooms(e.target.value)} className="h-input" />
+            </label>
+            <label className="h-field">
+              Metraje (m²)
+              <input type="number" step="0.01" min="0" placeholder="ej. 68.50" value={uAreaSqm} onChange={(e) => setUAreaSqm(e.target.value)} className="h-input" />
+            </label>
           </div>
 
-          {error && <div style={{ color: 'var(--color-danger)', fontSize: '13px', marginBottom: '12px' }}>{error}</div>}
-
-          {drawer === 'unit' && (
-            <form onSubmit={handleSaveUnit} style={{ display: 'grid', gap: '12px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                  Número de unidad (ej. 402)
-                  <input required value={uNumber} onChange={(e) => setUNumber(e.target.value)} style={inputStyle} />
-                </label>
-                <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                  Piso
-                  <input type="number" required value={uFloor} onChange={(e) => setUFloor(e.target.value)} style={inputStyle} />
-                </label>
-              </div>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                Tipología
-                <select value={uTypeId} onChange={(e) => handleTypeChange(e.target.value)} style={inputStyle}>
-                  {unitTypes.map((ut) => (
-                    <option key={ut.id} value={ut.id}>
-                      {ut.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                  Dormitorios
-                  <input type="number" min="0" required value={uBedrooms} onChange={(e) => setUBedrooms(e.target.value)} style={inputStyle} />
-                </label>
-                <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                  Metraje (m²)
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="ej. 68.50"
-                    value={uAreaSqm}
-                    onChange={(e) => setUAreaSqm(e.target.value)}
-                    style={inputStyle}
-                  />
-                </label>
-              </div>
-
-              <div
-                style={{
-                  padding: '12px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--color-border)',
-                  backgroundColor: 'var(--color-bg)',
-                  fontSize: '13px',
-                }}
-              >
-                <div style={{ color: 'var(--color-text-muted)', marginBottom: '4px' }}>
-                  Cálculo automático de alícuota (<Money cents={feePerSqmCents} /> / m²):
-                </div>
-                <div style={{ fontSize: '16px', fontWeight: 700 }}>
-                  {parsedArea && feePerSqmCents > 0 ? (
-                    <>
-                      {parsedArea} m² × <Money cents={feePerSqmCents} /> = <Money cents={computedFeeCents} /> / mes
-                    </>
-                  ) : (
-                    <span style={{ fontSize: '13px', fontWeight: 400, color: 'var(--color-text-muted)' }}>
-                      Ingresa el metraje (o configura el precio/m² en Configurador → Parámetros).
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
-                <input type="checkbox" checked={uManualFee} onChange={(e) => setUManualFee(e.target.checked)} />
-                Definir alícuota manualmente (sobrescribir cálculo por m²)
-              </label>
-
-              {uManualFee && (
-                <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                  Alícuota mensual manual (USD)
-                  <input type="number" step="0.01" min="0" required value={uFeeUsd} onChange={(e) => setUFeeUsd(e.target.value)} style={inputStyle} />
-                </label>
+          <div
+            style={{
+              padding: '14px',
+              borderRadius: '14px',
+              background: '#f6eee5',
+              border: '1px solid var(--border)',
+              fontSize: '13px',
+            }}
+          >
+            <div style={{ color: 'var(--muted-foreground)', marginBottom: '4px', fontSize: '12px' }}>
+              Cálculo automático (<Money cents={feePerSqmCents} /> / m²):
+            </div>
+            <div style={{ fontSize: '16px', fontWeight: 700 }}>
+              {parsedArea && feePerSqmCents > 0 ? (
+                <>
+                  {parsedArea} m² × <Money cents={feePerSqmCents} /> = <Money cents={computedFeeCents} /> / mes
+                </>
+              ) : (
+                <span style={{ fontSize: '12.5px', fontWeight: 400, color: 'var(--muted-foreground)' }}>
+                  Ingresa el metraje para calcular automáticamente.
+                </span>
               )}
+            </div>
+          </div>
 
-              <button type="submit" style={{ padding: '10px', backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 600, cursor: 'pointer' }}>
-                {editingUnit ? 'Guardar cambios' : 'Guardar unidad'}
-              </button>
-            </form>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+            <input type="checkbox" checked={uManualFee} onChange={(e) => setUManualFee(e.target.checked)} />
+            Definir alícuota manualmente
+          </label>
+
+          {uManualFee && (
+            <label className="h-field">
+              Alícuota mensual manual (USD)
+              <input type="number" step="0.01" min="0" required value={uFeeUsd} onChange={(e) => setUFeeUsd(e.target.value)} className="h-input" />
+            </label>
           )}
 
-          {drawer === 'person' && (
-            <form onSubmit={handleCreatePerson} style={{ display: 'grid', gap: '12px' }}>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                Nombre completo
-                <input required value={pName} onChange={(e) => setPName(e.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                Cédula o pasaporte (se guarda cifrada)
-                <input required value={pNationalId} onChange={(e) => setPNationalId(e.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                Teléfono WhatsApp (ej. 0984555922)
-                <input required value={pPhone} onChange={(e) => setPPhone(e.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                Correo electrónico (opcional)
-                <input type="email" value={pEmail} onChange={(e) => setPEmail(e.target.value)} style={inputStyle} />
-              </label>
-              <button type="submit" style={{ padding: '10px', backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 600, cursor: 'pointer' }}>
-                Guardar persona
-              </button>
-            </form>
-          )}
+          <div className="h-drawer-footer">
+            <button type="button" className="h-btn-outline" onClick={() => setDrawer(null)}>
+              Cancelar
+            </button>
+            <button type="submit" className="h-btn-dark">
+              {editingUnit ? 'Guardar cambios' : 'Guardar unidad'}
+            </button>
+          </div>
+        </form>
+      </HabitatDrawer>
 
-          {drawer === 'occupancy' && (
-            <form onSubmit={handleCreateOccupancy} style={{ display: 'grid', gap: '12px' }}>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                Unidad
-                <select value={oUnitId} onChange={(e) => setOUnitId(e.target.value)} style={inputStyle}>
-                  {units.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      Depto. {u.number}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                Persona
-                <select value={oPersonId} onChange={(e) => setOPersonId(e.target.value)} style={inputStyle}>
-                  {persons.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.fullName} ({p.waPhone})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                Rol de ocupación
-                <select value={oRole} onChange={(e) => setORole(e.target.value)} style={inputStyle}>
-                  <option value="OWNER_RESIDENT">Propietario residente</option>
-                  <option value="LONG_TERM_TENANT">Arrendatario fijo</option>
-                  <option value="OWNER_LANDLORD">Propietario arrendador</option>
-                  <option value="AIRBNB_HOST">Anfitrión Airbnb</option>
-                  <option value="AIRBNB_GUEST">Huésped Airbnb</option>
-                </select>
-              </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                Vigente desde
-                <input type="date" required value={oValidFrom} onChange={(e) => setOValidFrom(e.target.value)} style={inputStyle} />
-              </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                Vigente hasta (opcional)
-                <input type="date" value={oValidTo} onChange={(e) => setOValidTo(e.target.value)} style={inputStyle} />
-              </label>
-              <button type="submit" style={{ padding: '10px', backgroundColor: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 600, cursor: 'pointer' }}>
-                Guardar ocupación
-              </button>
-            </form>
-          )}
-        </aside>
-      )}
+      <HabitatDrawer
+        open={drawer === 'person'}
+        title="Nueva persona"
+        subtitle="La cédula/pasaporte se cifra con AES-256-GCM y el teléfono se normaliza a E.164."
+        onClose={() => setDrawer(null)}
+        width={440}
+      >
+        {error && <HabitatToast type="err" text={error} onClose={() => setError(null)} />}
+        <form onSubmit={handleCreatePerson} style={{ display: 'grid', gap: '14px', marginTop: error ? '12px' : 0 }}>
+          <label className="h-field">
+            Nombre completo
+            <input required value={pName} onChange={(e) => setPName(e.target.value)} className="h-input" />
+          </label>
+          <label className="h-field">
+            Cédula o pasaporte
+            <input required value={pNationalId} onChange={(e) => setPNationalId(e.target.value)} className="h-input" />
+          </label>
+          <label className="h-field">
+            Teléfono WhatsApp (ej. 0984555922)
+            <input required value={pPhone} onChange={(e) => setPPhone(e.target.value)} className="h-input" />
+          </label>
+          <label className="h-field">
+            Correo electrónico (opcional)
+            <input type="email" value={pEmail} onChange={(e) => setPEmail(e.target.value)} className="h-input" />
+          </label>
+          <div className="h-drawer-footer">
+            <button type="button" className="h-btn-outline" onClick={() => setDrawer(null)}>
+              Cancelar
+            </button>
+            <button type="submit" className="h-btn-dark">
+              Guardar persona
+            </button>
+          </div>
+        </form>
+      </HabitatDrawer>
+
+      <HabitatDrawer
+        open={drawer === 'occupancy'}
+        title="Vincular ocupación"
+        subtitle="Asocia una persona a una unidad con su rol y ventana de vigencia."
+        onClose={() => setDrawer(null)}
+        width={440}
+      >
+        {error && <HabitatToast type="err" text={error} onClose={() => setError(null)} />}
+        <form onSubmit={handleCreateOccupancy} style={{ display: 'grid', gap: '14px', marginTop: error ? '12px' : 0 }}>
+          <label className="h-field">
+            Unidad
+            <select value={oUnitId} onChange={(e) => setOUnitId(e.target.value)} className="h-input">
+              {units.map((u) => (
+                <option key={u.id} value={u.id}>
+                  Depto. {u.number}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="h-field">
+            Persona
+            <select value={oPersonId} onChange={(e) => setOPersonId(e.target.value)} className="h-input">
+              {persons.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.fullName} ({p.waPhone})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="h-field">
+            Rol de ocupación
+            <select value={oRole} onChange={(e) => setORole(e.target.value)} className="h-input">
+              <option value="OWNER_RESIDENT">Propietario residente</option>
+              <option value="LONG_TERM_TENANT">Arrendatario fijo</option>
+              <option value="OWNER_LANDLORD">Propietario arrendador</option>
+              <option value="AIRBNB_HOST">Anfitrión Airbnb</option>
+              <option value="AIRBNB_GUEST">Huésped Airbnb</option>
+            </select>
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <label className="h-field">
+              Vigente desde
+              <input type="date" required value={oValidFrom} onChange={(e) => setOValidFrom(e.target.value)} className="h-input" />
+            </label>
+            <label className="h-field">
+              Vigente hasta (opcional)
+              <input type="date" value={oValidTo} onChange={(e) => setOValidTo(e.target.value)} className="h-input" />
+            </label>
+          </div>
+          <div className="h-drawer-footer">
+            <button type="button" className="h-btn-outline" onClick={() => setDrawer(null)}>
+              Cancelar
+            </button>
+            <button type="submit" className="h-btn-dark">
+              Guardar ocupación
+            </button>
+          </div>
+        </form>
+      </HabitatDrawer>
     </section>
   );
 }

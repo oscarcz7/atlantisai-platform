@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { CalendarDays, Check, Plus, Sparkles } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
+import { HabitatDrawer, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
 
 interface ReservationRow {
@@ -62,6 +64,7 @@ export default function ReservationsPage() {
   const [attendees, setAttendees] = useState('4');
   const [simulation, setSimulation] = useState<SimulationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const canManage = me.role === 'SUPERADMIN' || me.role === 'ADMIN';
 
@@ -127,6 +130,7 @@ export default function ReservationsPage() {
       });
       setDrawerOpen(false);
       setSimulation(null);
+      setToast('Reserva registrada correctamente.');
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo crear la reserva.');
@@ -137,227 +141,222 @@ export default function ReservationsPage() {
     const reason = window.prompt('Motivo obligatorio de cancelación:');
     if (!reason || !reason.trim()) return;
     await apiFetch(`/reservations/${id}/cancel`, { method: 'POST', body: { reason } });
+    setToast('Reserva cancelada y registrada en auditoría.');
     await loadData();
   }
 
+  const confirmedCount = rows.filter((r) => r.status === 'CONFIRMED').length;
+  const pendingCount = rows.filter((r) => r.status === 'PENDING_PAYMENT' || r.status === 'IN_REVIEW').length;
+
   return (
-    <section>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '22px' }}>Reservas y calendario maestro</h1>
-          <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--color-text-muted)' }}>
-            Simulación en vivo con el motor de reglas (R01–R10) y bloqueo transaccional de cupos.
-          </p>
-        </div>
-        {canManage && (
-          <button
-            type="button"
-            onClick={() => { setError(null); setSimulation(null); setDrawerOpen(true); }}
-            style={{
-              padding: '9px 14px',
-              borderRadius: 'var(--radius-sm)',
-              border: 'none',
-              backgroundColor: 'var(--color-primary)',
-              color: '#ffffff',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            + Nueva reserva
-          </button>
-        )}
+    <section className="internal-page">
+      <ModuleHero
+        eyebrow="ÁREAS COMUNALES"
+        title="Reservas y calendario maestro"
+        description="Simulación en vivo con el motor de reglas (R01–R10), cálculo de combos y bloqueo transaccional de cupos."
+        icon={CalendarDays}
+        actions={
+          canManage && (
+            <button
+              type="button"
+              className="h-btn-dark"
+              onClick={() => {
+                setError(null);
+                setSimulation(null);
+                setDrawerOpen(true);
+              }}
+            >
+              <Plus size={15} /> Nueva reserva
+            </button>
+          )
+        }
+      />
+
+      {toast && <HabitatToast type="ok" text={toast} onClose={() => setToast(null)} />}
+
+      <div className="h-kpi-strip">
+        <article className="h-kpi-card">
+          <span>Reservas confirmadas</span>
+          <strong>{String(confirmedCount).padStart(2, '0')}</strong>
+          <small>listas para acceso</small>
+        </article>
+        <article className="h-kpi-card">
+          <span>En revisión / pago</span>
+          <strong>{String(pendingCount).padStart(2, '0')}</strong>
+          <small>esperando comprobante</small>
+        </article>
+        <article className="h-kpi-card">
+          <span>Total histórico</span>
+          <strong>{rows.length}</strong>
+          <small>en este edificio</small>
+        </article>
       </div>
 
       {rows.length === 0 ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>Aún no hay reservas registradas en este edificio.</p>
+        <div className="h-panel" style={{ color: 'var(--muted-foreground)', fontSize: '13.5px' }}>
+          Aún no hay reservas registradas en este edificio.
+        </div>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-              <th style={{ padding: '12px' }}>Área(s)</th>
-              <th style={{ padding: '12px' }}>Unidad / Residente</th>
-              <th style={{ padding: '12px' }}>Horario (Ecuador)</th>
-              <th style={{ padding: '12px' }}>Asistentes</th>
-              <th style={{ padding: '12px' }}>Cobro</th>
-              <th style={{ padding: '12px' }}>Estado</th>
-              <th style={{ padding: '12px' }}>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                <td style={{ padding: '12px', fontWeight: 500 }}>
-                  {r.amenities.map((a) => a.amenity.name).join(' + ')}
-                </td>
-                <td style={{ padding: '12px' }}>
-                  {r.unit ? `Depto. ${r.unit.number}` : 'Bloqueo administrativo'}
-                  {r.person ? ` · ${r.person.fullName}` : ''}
-                </td>
-                <td style={{ padding: '12px' }}>
-                  {new Date(r.startsAt).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })}
-                  {' – '}
-                  {new Date(r.endsAt).toLocaleTimeString('es-EC', { timeZone: 'America/Guayaquil', timeStyle: 'short' })}
-                </td>
-                <td style={{ padding: '12px' }}>{r.declaredAttendees}</td>
-                <td style={{ padding: '12px' }}><Money cents={r.totalCents} /></td>
-                <td style={{ padding: '12px' }}><StatusBadge status={r.status} /></td>
-                <td style={{ padding: '12px' }}>
-                  {canManage && ['CONFIRMED', 'PENDING_PAYMENT', 'IN_REVIEW'].includes(r.status) && (
-                    <button
-                      type="button"
-                      onClick={() => handleCancel(r.id)}
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--color-danger)',
-                        background: 'transparent',
-                        color: 'var(--color-danger)',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                      }}
-                    >
-                      Cancelar
-                    </button>
-                  )}
-                </td>
+        <div className="h-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Área(s)</th>
+                <th>Unidad / Residente</th>
+                <th>Horario (Ecuador)</th>
+                <th>Asistentes</th>
+                <th>Cobro</th>
+                <th>Estado</th>
+                {canManage && <th style={{ textAlign: 'right' }}>Acción</th>}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td style={{ fontWeight: 600 }}>{r.amenities.map((a) => a.amenity.name).join(' + ')}</td>
+                  <td>
+                    {r.unit ? `Depto. ${r.unit.number}` : 'Bloqueo administrativo'}
+                    {r.person ? ` · ${r.person.fullName}` : ''}
+                  </td>
+                  <td style={{ fontSize: '12.5px', color: 'var(--muted-foreground)' }}>
+                    {new Date(r.startsAt).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })}
+                    {' – '}
+                    {new Date(r.endsAt).toLocaleTimeString('es-EC', { timeZone: 'America/Guayaquil', timeStyle: 'short' })}
+                  </td>
+                  <td>{r.declaredAttendees}</td>
+                  <td>
+                    <Money cents={r.totalCents} />
+                  </td>
+                  <td>
+                    <StatusBadge status={r.status} />
+                  </td>
+                  {canManage && (
+                    <td style={{ textAlign: 'right' }}>
+                      {['CONFIRMED', 'PENDING_PAYMENT', 'IN_REVIEW'].includes(r.status) && (
+                        <button type="button" className="h-btn-danger h-btn-sm" onClick={() => void handleCancel(r.id)}>
+                          Cancelar
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      {drawerOpen && (
-        <aside
-          style={{
-            position: 'fixed',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            width: '440px',
-            backgroundColor: 'var(--color-surface)',
-            borderLeft: '1px solid var(--color-border)',
-            padding: '24px',
-            boxShadow: '-4px 0 24px rgba(0,0,0,0.14)',
-            overflowY: 'auto',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ margin: 0, fontSize: '18px' }}>Nueva reserva (con simulación)</h2>
-            <button type="button" onClick={() => setDrawerOpen(false)}>✕</button>
+      <HabitatDrawer
+        open={drawerOpen}
+        title="Nueva reserva"
+        subtitle="Simula contra el motor de reglas (mora, garantía, rol, aforo y combos) antes de confirmar."
+        onClose={() => setDrawerOpen(false)}
+        width={480}
+      >
+        <form onSubmit={handleCreate} style={{ display: 'grid', gap: '14px' }}>
+          <label className="h-field">
+            Unidad
+            <select value={unitId} onChange={(e) => { setUnitId(e.target.value); setSimulation(null); }} className="h-input">
+              {units.map((u) => (
+                <option key={u.id} value={u.id}>
+                  Depto. {u.number}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="h-field">
+            Residente / Solicitante
+            <select value={personId} onChange={(e) => { setPersonId(e.target.value); setSimulation(null); }} className="h-input">
+              {persons.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.fullName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="h-field">
+            <span>Área(s) comunal(es) (puedes marcar combo)</span>
+            <div style={{ display: 'grid', gap: '6px', maxHeight: '150px', overflowY: 'auto', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: '12px', background: 'var(--background)' }}>
+              {amenities.map((a) => (
+                <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 400 }}>
+                  <input type="checkbox" checked={selectedAmenityIds.includes(a.id)} onChange={() => toggleAmenity(a.id)} />
+                  {a.name}
+                </label>
+              ))}
+            </div>
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '10px' }}>
+            <label className="h-field">
+              Fecha
+              <input type="date" value={date} onChange={(e) => { setDate(e.target.value); setSimulation(null); }} className="h-input" />
+            </label>
+            <label className="h-field">
+              Inicio
+              <input type="time" value={startTime} onChange={(e) => { setStartTime(e.target.value); setSimulation(null); }} className="h-input" />
+            </label>
+            <label className="h-field">
+              Fin
+              <input type="time" value={endTime} onChange={(e) => { setEndTime(e.target.value); setSimulation(null); }} className="h-input" />
+            </label>
+          </div>
+          <label className="h-field">
+            Asistentes declarados (incluye residente)
+            <input type="number" min={1} value={attendees} onChange={(e) => { setAttendees(e.target.value); setSimulation(null); }} className="h-input" />
+          </label>
 
-          <form onSubmit={handleCreate} style={{ display: 'grid', gap: '12px' }}>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Unidad
-              <select value={unitId} onChange={(e) => { setUnitId(e.target.value); setSimulation(null); }} style={{ padding: '8px', border: '1px solid var(--color-border)' }}>
-                {units.map((u) => <option key={u.id} value={u.id}>Depto. {u.number}</option>)}
-              </select>
-            </label>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Residente / Solicitante
-              <select value={personId} onChange={(e) => { setPersonId(e.target.value); setSimulation(null); }} style={{ padding: '8px', border: '1px solid var(--color-border)' }}>
-                {persons.map((p) => <option key={p.id} value={p.id}>{p.fullName}</option>)}
-              </select>
-            </label>
-            <div style={{ fontSize: '14px' }}>
-              <div style={{ marginBottom: '6px' }}>Área(s) comunal(es) (puedes marcar combo):</div>
-              <div style={{ display: 'grid', gap: '4px', maxHeight: '140px', overflowY: 'auto', padding: '8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
-                {amenities.map((a) => (
-                  <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
-                    <input type="checkbox" checked={selectedAmenityIds.includes(a.id)} onChange={() => toggleAmenity(a.id)} />
-                    {a.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                Fecha
-                <input type="date" value={date} onChange={(e) => { setDate(e.target.value); setSimulation(null); }} style={{ padding: '6px', border: '1px solid var(--color-border)' }} />
-              </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                Inicio
-                <input type="time" value={startTime} onChange={(e) => { setStartTime(e.target.value); setSimulation(null); }} style={{ padding: '6px', border: '1px solid var(--color-border)' }} />
-              </label>
-              <label style={{ display: 'grid', gap: '4px', fontSize: '13px' }}>
-                Fin
-                <input type="time" value={endTime} onChange={(e) => { setEndTime(e.target.value); setSimulation(null); }} style={{ padding: '6px', border: '1px solid var(--color-border)' }} />
-              </label>
-            </div>
-            <label style={{ display: 'grid', gap: '4px', fontSize: '14px' }}>
-              Asistentes declarados (incluye residente)
-              <input type="number" min={1} value={attendees} onChange={(e) => { setAttendees(e.target.value); setSimulation(null); }} style={{ padding: '8px', border: '1px solid var(--color-border)' }} />
-            </label>
+          <button type="button" className="h-btn-outline" onClick={() => void handleSimulate()} disabled={selectedAmenityIds.length === 0}>
+            <Sparkles size={14} /> Simular reglas y cobros
+          </button>
 
-            <button
-              type="button"
-              onClick={handleSimulate}
-              disabled={selectedAmenityIds.length === 0}
+          {simulation && (
+            <div
               style={{
-                padding: '9px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--color-primary)',
-                backgroundColor: 'transparent',
-                color: 'var(--color-primary)',
-                fontWeight: 600,
-                cursor: 'pointer',
+                padding: '14px',
+                borderRadius: '14px',
+                background: simulation.ok ? '#edf5ef' : '#fae9e6',
+                border: `1px solid ${simulation.ok ? '#cde4d4' : '#f0cac3'}`,
+                fontSize: '13px',
               }}
             >
-              Simular reglas y cobros
-            </button>
-
-            {simulation && (
-              <div
-                style={{
-                  padding: '12px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: `1px solid ${simulation.ok ? 'var(--color-success)' : 'var(--color-danger)'}`,
-                  fontSize: '13px',
-                }}
-              >
-                {simulation.ok ? (
-                  <>
-                    <strong style={{ color: 'var(--color-success)' }}>Reserva válida</strong>
-                    <div style={{ marginTop: '6px' }}>Estado inicial: <StatusBadge status={simulation.initialStatus ?? 'CONFIRMED'} /></div>
-                    {simulation.charges?.map((c, idx) => (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
-                        <span>{c.description}</span>
-                        <Money cents={c.amountCents} />
-                      </div>
-                    ))}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', paddingTop: '6px', borderTop: '1px solid var(--color-border)', fontWeight: 700 }}>
-                      <span>Total</span>
-                      <Money cents={simulation.totalCents ?? 0} />
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ color: 'var(--color-danger)' }}>
-                    <strong>Rechazada ({simulation.code}):</strong> {simulation.message}
+              {simulation.ok ? (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#39866b', fontWeight: 700 }}>
+                    <Check size={15} /> Reserva válida
                   </div>
-                )}
-              </div>
-            )}
+                  <div style={{ marginTop: '8px' }}>
+                    Estado inicial: <StatusBadge status={simulation.initialStatus ?? 'CONFIRMED'} />
+                  </div>
+                  {simulation.charges?.map((c, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                      <span>{c.description}</span>
+                      <Money cents={c.amountCents} />
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #cde4d4', fontWeight: 700 }}>
+                    <span>Total</span>
+                    <Money cents={simulation.totalCents ?? 0} />
+                  </div>
+                </>
+              ) : (
+                <div style={{ color: '#b7544d' }}>
+                  <strong>Rechazada ({simulation.code}):</strong> {simulation.message}
+                </div>
+              )}
+            </div>
+          )}
 
-            {error && <div style={{ color: 'var(--color-danger)', fontSize: '13px' }}>{error}</div>}
+          {error && <HabitatToast type="err" text={error} onClose={() => setError(null)} />}
 
-            <button
-              type="submit"
-              disabled={!simulation?.ok}
-              style={{
-                padding: '10px',
-                borderRadius: 'var(--radius-sm)',
-                border: 'none',
-                backgroundColor: simulation?.ok ? 'var(--color-primary)' : 'var(--color-border)',
-                color: '#ffffff',
-                fontWeight: 600,
-                cursor: simulation?.ok ? 'pointer' : 'not-allowed',
-              }}
-            >
+          <div className="h-drawer-footer">
+            <button type="button" className="h-btn-outline" onClick={() => setDrawerOpen(false)}>
+              Cancelar
+            </button>
+            <button type="submit" disabled={!simulation?.ok} className="h-btn-dark">
               Confirmar reserva
             </button>
-          </form>
-        </aside>
-      )}
+          </div>
+        </form>
+      </HabitatDrawer>
     </section>
   );
 }
