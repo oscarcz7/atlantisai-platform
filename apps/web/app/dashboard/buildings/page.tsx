@@ -11,7 +11,17 @@ interface BankAccount {
   accountNumber: string;
   holder: string;
   rucOrId: string;
+  purpose?: string;
 }
+
+const EMPTY_BANK: BankAccount = {
+  bank: '',
+  accountType: 'Corriente',
+  accountNumber: '',
+  holder: '',
+  rucOrId: '',
+  purpose: 'General',
+};
 
 interface TenantDto {
   id: string;
@@ -56,11 +66,7 @@ export default function BuildingsPage() {
   const [waOpen, setWaOpen] = useState('09:00');
   const [waClose, setWaClose] = useState('17:00');
   const [weekends, setWeekends] = useState('Solo emergencias por WhatsApp');
-  const [bankName, setBankName] = useState('');
-  const [bankType, setBankType] = useState('Corriente');
-  const [bankNumber, setBankNumber] = useState('');
-  const [bankHolder, setBankHolder] = useState('');
-  const [bankRuc, setBankRuc] = useState('');
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([{ ...EMPTY_BANK }]);
 
   const [cloneSourceId, setCloneSourceId] = useState('');
   const [cloneCode, setCloneCode] = useState('');
@@ -97,11 +103,7 @@ export default function BuildingsPage() {
     setWaOpen('09:00');
     setWaClose('17:00');
     setWeekends('Solo emergencias por WhatsApp');
-    setBankName('');
-    setBankType('Corriente');
-    setBankNumber('');
-    setBankHolder('');
-    setBankRuc('');
+    setBankAccounts([{ ...EMPTY_BANK }]);
     setDrawer('create');
   }
 
@@ -124,13 +126,31 @@ export default function BuildingsPage() {
     setWaOpen(t.officeHours?.phoneWhatsapp?.open ?? '09:00');
     setWaClose(t.officeHours?.phoneWhatsapp?.close ?? '17:00');
     setWeekends(t.officeHours?.weekends ?? 'Solo emergencias por WhatsApp');
-    const firstBank = t.bankAccounts?.[0];
-    setBankName(firstBank?.bank ?? '');
-    setBankType(firstBank?.accountType ?? 'Corriente');
-    setBankNumber(firstBank?.accountNumber ?? '');
-    setBankHolder(firstBank?.holder ?? '');
-    setBankRuc(firstBank?.rucOrId ?? '');
+    setBankAccounts(
+      t.bankAccounts && t.bankAccounts.length > 0
+        ? t.bankAccounts.map((b) => ({
+            bank: b.bank ?? '',
+            accountType: b.accountType ?? 'Corriente',
+            accountNumber: b.accountNumber ?? '',
+            holder: b.holder ?? '',
+            rucOrId: b.rucOrId ?? '',
+            purpose: b.purpose ?? 'General',
+          }))
+        : [{ ...EMPTY_BANK }],
+    );
     setDrawer('edit');
+  }
+
+  function updateBankAccount(index: number, patch: Partial<BankAccount>) {
+    setBankAccounts((prev) => prev.map((acc, i) => (i === index ? { ...acc, ...patch } : acc)));
+  }
+
+  function addBankAccount() {
+    setBankAccounts((prev) => [...prev, { ...EMPTY_BANK }]);
+  }
+
+  function removeBankAccount(index: number) {
+    setBankAccounts((prev) => prev.filter((_, i) => i !== index));
   }
 
   function openClone(sourceId: string) {
@@ -166,17 +186,16 @@ export default function BuildingsPage() {
         phoneWhatsapp: { days: waDays, open: waOpen, close: waClose },
         weekends,
       },
-      bankAccounts: bankName.trim()
-        ? [
-            {
-              bank: bankName.trim(),
-              accountType: bankType,
-              accountNumber: bankNumber.trim(),
-              holder: bankHolder.trim(),
-              rucOrId: bankRuc.trim(),
-            },
-          ]
-        : [],
+      bankAccounts: bankAccounts
+        .filter((b) => b.bank.trim() !== '' || b.accountNumber.trim() !== '')
+        .map((b) => ({
+          bank: b.bank.trim(),
+          accountType: b.accountType,
+          accountNumber: b.accountNumber.trim(),
+          holder: b.holder.trim(),
+          rucOrId: b.rucOrId.trim(),
+          purpose: b.purpose ?? 'General',
+        })),
     };
 
     try {
@@ -368,14 +387,23 @@ export default function BuildingsPage() {
                   </div>
                 </div>
                 <div>
-                  <div style={{ color: 'var(--muted-foreground)', fontSize: '11px', marginBottom: '2px' }}>Cuenta bancaria</div>
+                  <div style={{ color: 'var(--muted-foreground)', fontSize: '11px', marginBottom: '2px' }}>
+                    Cuentas bancarias ({t.bankAccounts?.length ?? 0})
+                  </div>
                   {t.bankAccounts && t.bankAccounts.length > 0 ? (
-                    <>
-                      <div style={{ fontWeight: 600 }}>
-                        {t.bankAccounts[0]!.bank} ({t.bankAccounts[0]!.accountType})
-                      </div>
-                      <div style={{ color: 'var(--muted-foreground)', fontSize: '12px' }}>{t.bankAccounts[0]!.accountNumber}</div>
-                    </>
+                    <div style={{ display: 'grid', gap: '4px' }}>
+                      {t.bankAccounts.map((acc, idx) => (
+                        <div key={idx}>
+                          <div style={{ fontWeight: 600 }}>
+                            {acc.bank} ({acc.accountType})
+                            {acc.purpose ? ` · ${acc.purpose}` : ''}
+                          </div>
+                          <div style={{ color: 'var(--muted-foreground)', fontSize: '12px' }}>
+                            {acc.accountNumber}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
                     <div style={{ color: 'var(--muted-foreground)' }}>Sin configurar</div>
                   )}
@@ -477,33 +505,115 @@ export default function BuildingsPage() {
             <input value={weekends} onChange={(e) => setWeekends(e.target.value)} className="h-input" />
           </label>
 
-          <h3 style={{ margin: '6px 0 0', fontSize: '13px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
-            Cuenta bancaria para transferencias
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <label className="h-field">
-              Banco
-              <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Nombre del banco" className="h-input" />
-            </label>
-            <label className="h-field">
-              Tipo de cuenta
-              <select value={bankType} onChange={(e) => setBankType(e.target.value)} className="h-input">
-                <option value="Corriente">Corriente</option>
-                <option value="Ahorros">Ahorros</option>
-              </select>
-            </label>
-            <label className="h-field">
-              Número de cuenta
-              <input value={bankNumber} onChange={(e) => setBankNumber(e.target.value)} className="h-input" />
-            </label>
-            <label className="h-field">
-              Titular / Condominio
-              <input value={bankHolder} onChange={(e) => setBankHolder(e.target.value)} className="h-input" />
-            </label>
-            <label className="h-field" style={{ gridColumn: '1 / -1' }}>
-              RUC / Cédula del titular
-              <input value={bankRuc} onChange={(e) => setBankRuc(e.target.value)} className="h-input" />
-            </label>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              margin: '6px 0 0',
+              borderTop: '1px solid var(--border)',
+              paddingTop: '12px',
+            }}
+          >
+            <h3 style={{ margin: 0, fontSize: '13px' }}>
+              Cuentas bancarias para transferencias ({bankAccounts.length})
+            </h3>
+            <button type="button" className="h-btn-outline h-btn-sm" onClick={addBankAccount}>
+              <Plus size={12} /> Agregar cuenta
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gap: '12px' }}>
+            {bankAccounts.map((acc, index) => (
+              <div
+                key={index}
+                style={{
+                  padding: '12px',
+                  borderRadius: '14px',
+                  border: '1px solid var(--border)',
+                  background: 'var(--background)',
+                  display: 'grid',
+                  gap: '10px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>
+                    Cuenta #{index + 1}
+                  </strong>
+                  {bankAccounts.length > 1 && (
+                    <button
+                      type="button"
+                      className="h-btn-danger h-btn-sm"
+                      onClick={() => removeBankAccount(index)}
+                    >
+                      <Trash2 size={11} /> Quitar
+                    </button>
+                  )}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <label className="h-field">
+                    Banco
+                    <input
+                      value={acc.bank}
+                      onChange={(e) => updateBankAccount(index, { bank: e.target.value })}
+                      placeholder="Nombre del banco"
+                      className="h-input"
+                    />
+                  </label>
+                  <label className="h-field">
+                    Tipo de cuenta
+                    <select
+                      value={acc.accountType}
+                      onChange={(e) => updateBankAccount(index, { accountType: e.target.value })}
+                      className="h-input"
+                    >
+                      <option value="Corriente">Corriente</option>
+                      <option value="Ahorros">Ahorros</option>
+                    </select>
+                  </label>
+                  <label className="h-field">
+                    Número de cuenta
+                    <input
+                      value={acc.accountNumber}
+                      onChange={(e) => updateBankAccount(index, { accountNumber: e.target.value })}
+                      placeholder="0000000000"
+                      className="h-input"
+                    />
+                  </label>
+                  <label className="h-field">
+                    Concepto / uso
+                    <select
+                      value={acc.purpose ?? 'General'}
+                      onChange={(e) => updateBankAccount(index, { purpose: e.target.value })}
+                      className="h-input"
+                    >
+                      <option value="General">General (todos los pagos)</option>
+                      <option value="Alícuotas">Alícuotas mensuales</option>
+                      <option value="Garantías">Fondo de garantías</option>
+                      <option value="Áreas comunales">Limpieza / áreas comunales</option>
+                    </select>
+                  </label>
+                  <label className="h-field">
+                    Titular / Condominio
+                    <input
+                      value={acc.holder}
+                      onChange={(e) => updateBankAccount(index, { holder: e.target.value })}
+                      placeholder="Nombre del titular"
+                      className="h-input"
+                    />
+                  </label>
+                  <label className="h-field">
+                    RUC / Cédula del titular
+                    <input
+                      value={acc.rucOrId}
+                      onChange={(e) => updateBankAccount(index, { rucOrId: e.target.value })}
+                      placeholder="0000000000001"
+                      className="h-input"
+                    />
+                  </label>
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="h-drawer-footer">
