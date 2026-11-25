@@ -78,7 +78,7 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@edificionoah.com"
+              placeholder="usuario@ejemplo.com"
               style={{
                 padding: '11px 13px',
                 borderRadius: 'var(--radius-sm)',
@@ -116,7 +116,7 @@ export default function LoginPage() {
                 required
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value)}
-                placeholder="123456"
+                placeholder="000000"
                 style={{
                   padding: '11px 13px',
                   borderRadius: 'var(--radius-sm)',

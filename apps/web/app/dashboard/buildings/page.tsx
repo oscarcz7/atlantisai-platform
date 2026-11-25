@@ -377,15 +377,15 @@ export default function BuildingsPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <label className="h-field">
               Código único
-              <input required disabled={drawer === 'edit'} value={code} onChange={(e) => setCode(e.target.value)} placeholder="ej. noah-2" className="h-input" />
+              <input required disabled={drawer === 'edit'} value={code} onChange={(e) => setCode(e.target.value)} placeholder="ej. edificio-central" className="h-input" />
             </label>
             <label className="h-field">
               Nombre del edificio
-              <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Edificio NOAH" className="h-input" />
+              <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Edificio Residencial" className="h-input" />
             </label>
             <label className="h-field">
               RUC
-              <input value={ruc} onChange={(e) => setRuc(e.target.value)} placeholder="1790000000001" className="h-input" />
+              <input value={ruc} onChange={(e) => setRuc(e.target.value)} placeholder="0000000000001" className="h-input" />
             </label>
             <label className="h-field">
               Zona horaria
@@ -399,27 +399,27 @@ export default function BuildingsPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <label className="h-field">
               Empresa administradora
-              <input value={adminCompany} onChange={(e) => setAdminCompany(e.target.value)} placeholder="Grupo Baluarte" className="h-input" />
+              <input value={adminCompany} onChange={(e) => setAdminCompany(e.target.value)} placeholder="Administradora S.A." className="h-input" />
             </label>
             <label className="h-field">
               Contacto administrador
-              <input value={adminContact} onChange={(e) => setAdminContact(e.target.value)} placeholder="Arq. Damián Álvarez" className="h-input" />
+              <input value={adminContact} onChange={(e) => setAdminContact(e.target.value)} placeholder="Nombre del responsable" className="h-input" />
             </label>
             <label className="h-field">
               Teléfono administración
-              <input value={adminPhone} onChange={(e) => setAdminPhone(e.target.value)} placeholder="+593984555922" className="h-input" />
+              <input value={adminPhone} onChange={(e) => setAdminPhone(e.target.value)} placeholder="+593999000000" className="h-input" />
             </label>
             <label className="h-field">
               Correo administración
-              <input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="admin@edificio.com" className="h-input" />
+              <input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="administracion@ejemplo.com" className="h-input" />
             </label>
             <label className="h-field">
               Empresa de seguridad
-              <input value={secCompany} onChange={(e) => setSecCompany(e.target.value)} placeholder="FISSEG" className="h-input" />
+              <input value={secCompany} onChange={(e) => setSecCompany(e.target.value)} placeholder="Empresa de seguridad" className="h-input" />
             </label>
             <label className="h-field">
               WhatsApp garita / seguridad
-              <input value={secWhatsapp} onChange={(e) => setSecWhatsapp(e.target.value)} placeholder="+593959846694" className="h-input" />
+              <input value={secWhatsapp} onChange={(e) => setSecWhatsapp(e.target.value)} placeholder="+593999000001" className="h-input" />
             </label>
           </div>
 
@@ -463,7 +463,7 @@ export default function BuildingsPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <label className="h-field">
               Banco
-              <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Banco Pichincha" className="h-input" />
+              <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Nombre del banco" className="h-input" />
             </label>
             <label className="h-field">
               Tipo de cuenta
@@ -517,11 +517,11 @@ export default function BuildingsPage() {
           </label>
           <label className="h-field">
             Código del nuevo edificio
-            <input required value={cloneCode} onChange={(e) => setCloneCode(e.target.value)} placeholder="torre-norte" className="h-input" />
+            <input required value={cloneCode} onChange={(e) => setCloneCode(e.target.value)} placeholder="ej. edificio-copia" className="h-input" />
           </label>
           <label className="h-field">
             Nombre del nuevo edificio
-            <input required value={cloneName} onChange={(e) => setCloneName(e.target.value)} placeholder="Torre Norte" className="h-input" />
+            <input required value={cloneName} onChange={(e) => setCloneName(e.target.value)} placeholder="Nuevo Edificio" className="h-input" />
           </label>
           <div className="h-drawer-footer">
             <button type="button" className="h-btn-outline" onClick={() => setDrawer('none')}>

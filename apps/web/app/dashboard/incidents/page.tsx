@@ -185,7 +185,7 @@ export default function IncidentsPage() {
           </label>
           <label className="h-field">
             Ubicación
-            <input required value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Ej. Ascensor 1, Piscina" className="h-input" />
+            <input required value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Ej. Lobby, Ascensor, Área común" className="h-input" />
           </label>
           <label className="h-field">
             Urgencia

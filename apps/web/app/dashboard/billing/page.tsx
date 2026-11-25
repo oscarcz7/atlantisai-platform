@@ -32,7 +32,7 @@ export default function BillingPage() {
   const [toast, setToast] = useState<string | null>(null);
 
   const [unitId, setUnitId] = useState('');
-  const [bank, setBank] = useState('Banco Pichincha');
+  const [bank, setBank] = useState('');
   const [amountUsd, setAmountUsd] = useState('50.00');
   const [reference, setReference] = useState('');
   const [transferDate, setTransferDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -290,7 +290,7 @@ export default function BillingPage() {
           </label>
           <label className="h-field">
             Banco
-            <input required value={bank} onChange={(e) => setBank(e.target.value)} className="h-input" />
+            <input required value={bank} onChange={(e) => setBank(e.target.value)} placeholder="Nombre del banco" className="h-input" />
           </label>
           <label className="h-field">
             Monto (USD)

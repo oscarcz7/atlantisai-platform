@@ -384,8 +384,8 @@ export default function CadastrePage() {
         <form onSubmit={handleSaveUnit} style={{ display: 'grid', gap: '14px', marginTop: error ? '12px' : 0 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <label className="h-field">
-              Número de unidad (ej. 402)
-              <input required value={uNumber} onChange={(e) => setUNumber(e.target.value)} className="h-input" />
+              Número de unidad (ej. 101)
+              <input required value={uNumber} onChange={(e) => setUNumber(e.target.value)} placeholder="101" className="h-input" />
             </label>
             <label className="h-field">
               Piso
@@ -409,7 +409,7 @@ export default function CadastrePage() {
             </label>
             <label className="h-field">
               Metraje (m²)
-              <input type="number" step="0.01" min="0" placeholder="ej. 68.50" value={uAreaSqm} onChange={(e) => setUAreaSqm(e.target.value)} className="h-input" />
+              <input type="number" step="0.01" min="0" placeholder="ej. 75.00" value={uAreaSqm} onChange={(e) => setUAreaSqm(e.target.value)} className="h-input" />
             </label>
           </div>
 
@@ -479,8 +479,8 @@ export default function CadastrePage() {
             <input required value={pNationalId} onChange={(e) => setPNationalId(e.target.value)} className="h-input" />
           </label>
           <label className="h-field">
-            Teléfono WhatsApp (ej. 0984555922)
-            <input required value={pPhone} onChange={(e) => setPPhone(e.target.value)} className="h-input" />
+            Teléfono WhatsApp (ej. 0999000000)
+            <input required value={pPhone} onChange={(e) => setPPhone(e.target.value)} placeholder="0999000000" className="h-input" />
           </label>
           <label className="h-field">
             Correo electrónico (opcional)

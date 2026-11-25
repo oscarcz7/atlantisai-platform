@@ -484,7 +484,7 @@ export default function BuildingConfigPage() {
                 onChange={(e) => setCancelCleaning(e.target.value as 'NON_REFUNDABLE' | 'REFUNDABLE' | 'CREDIT')}
                 className="h-input"
               >
-                <option value="NON_REFUNDABLE">No reembolsable (Manual NOAH)</option>
+                <option value="NON_REFUNDABLE">No reembolsable</option>
                 <option value="CREDIT">Crédito a favor</option>
                 <option value="REFUNDABLE">Reembolsable</option>
               </select>
@@ -690,11 +690,11 @@ export default function BuildingConfigPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <label className="h-field">
               Código único
-              <input required disabled={amenityDrawer === 'edit'} value={amCode} onChange={(e) => setAmCode(e.target.value)} placeholder="BBQ_ROOFTOP" className="h-input" />
+              <input required disabled={amenityDrawer === 'edit'} value={amCode} onChange={(e) => setAmCode(e.target.value)} placeholder="AREA_COMUNAL" className="h-input" />
             </label>
             <label className="h-field">
               Nombre del área
-              <input required value={amName} onChange={(e) => setAmName(e.target.value)} placeholder="BBQ Terraza" className="h-input" />
+              <input required value={amName} onChange={(e) => setAmName(e.target.value)} placeholder="Salón comunal" className="h-input" />
             </label>
             <label className="h-field">
               Aforo máximo (personas)
@@ -798,11 +798,11 @@ export default function BuildingConfigPage() {
         <form onSubmit={handleSaveUnitType} style={{ display: 'grid', gap: '14px' }}>
           <label className="h-field">
             Código
-            <input required disabled={utDrawer === 'edit'} value={utCode} onChange={(e) => setUtCode(e.target.value)} placeholder="PENTHOUSE" className="h-input" />
+            <input required disabled={utDrawer === 'edit'} value={utCode} onChange={(e) => setUtCode(e.target.value)} placeholder="TIPO_UNIDAD" className="h-input" />
           </label>
           <label className="h-field">
             Nombre
-            <input required value={utName} onChange={(e) => setUtName(e.target.value)} placeholder="Penthouse (4 dormitorios)" className="h-input" />
+            <input required value={utName} onChange={(e) => setUtName(e.target.value)} placeholder="Departamento (2 dormitorios)" className="h-input" />
           </label>
           <label className="h-field">
             Número de dormitorios
