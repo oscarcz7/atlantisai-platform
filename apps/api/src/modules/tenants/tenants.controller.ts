@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Inject, Param, Patch, Post } from '@nestjs/common';
 import {
   type AuthenticatedStaffUser,
   CurrentUser,
@@ -37,6 +37,7 @@ export class TenantsController {
   @Roles('SUPERADMIN', 'ADMIN')
   @Patch(':id')
   update(
+    @CurrentUser() user: AuthenticatedStaffUser,
     @Param('id') id: string,
     @Body()
     body: {
@@ -49,6 +50,12 @@ export class TenantsController {
       bankAccounts?: Array<Record<string, unknown>>;
     },
   ) {
+    if (user.role !== 'SUPERADMIN' && !user.tenantIds.includes(id)) {
+      throw new ForbiddenException({
+        code: 'TENANT_ACCESS_DENIED',
+        message: 'No tienes permiso para editar este edificio.',
+      });
+    }
     return this.tenantsService.update(id, body);
   }
 

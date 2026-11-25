@@ -4,9 +4,11 @@ import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { AuthService } from './auth.service.js';
 import { FieldEncryptionService } from './crypto/field-encryption.service.js';
+import { type AuthenticatedStaffUser } from './decorators/roles.decorator.js';
 import { MAILER_TOKEN, type Mailer } from './mailer/mailer.interface.js';
 
 const INVITE_TTL_MS = 72 * 60 * 60 * 1000;
+const ADMIN_MANAGED_ROLES: StaffRole[] = ['ACCOUNTANT', 'GUARD'];
 
 @Injectable()
 export class StaffUsersService {
@@ -17,8 +19,47 @@ export class StaffUsersService {
     @Inject(AuthService) private readonly authService: AuthService,
   ) {}
 
-  async list() {
+  private assertAdminScope(
+    actor: AuthenticatedStaffUser,
+    targetRole: StaffRole,
+    targetTenantIds: string[],
+  ) {
+    if (actor.role === 'SUPERADMIN') return;
+    if (!ADMIN_MANAGED_ROLES.includes(targetRole)) {
+      throw new DomainError(
+        'ROLE_NOT_ALLOWED',
+        'Un Administrador solo puede gestionar usuarios de tipo Contador o Guardia.',
+        403,
+      );
+    }
+    if (targetTenantIds.length === 0) {
+      throw new DomainError(
+        'TENANT_REQUIRED',
+        'Debes asignar al menos uno de tus edificios al usuario.',
+        422,
+      );
+    }
+    const unauthorized = targetTenantIds.find((id) => !actor.tenantIds.includes(id));
+    if (unauthorized) {
+      throw new DomainError(
+        'TENANT_ACCESS_DENIED',
+        'Solo puedes asignar edificios que tú administras.',
+        403,
+      );
+    }
+  }
+
+  async list(actor: AuthenticatedStaffUser) {
+    const where =
+      actor.role === 'SUPERADMIN'
+        ? {}
+        : {
+            role: { in: ADMIN_MANAGED_ROLES },
+            tenants: { some: { tenantId: { in: actor.tenantIds } } },
+          };
+
     const users = await this.prisma.staffUser.findMany({
+      where,
       include: {
         tenants: { include: { tenant: { select: { id: true, code: true, name: true } } } },
       },
@@ -39,11 +80,13 @@ export class StaffUsersService {
   }
 
   async invite(
-    actorId: string,
+    actor: AuthenticatedStaffUser,
     input: { email: string; fullName: string; role: StaffRole; tenantIds: string[] },
     ipAddress?: string,
     now: Date = new Date(),
   ) {
+    this.assertAdminScope(actor, input.role, input.tenantIds);
+
     const email = input.email.trim().toLowerCase();
     const existing = await this.prisma.staffUser.findUnique({ where: { email } });
     if (existing) {
@@ -85,7 +128,7 @@ export class StaffUsersService {
       inviteToken: rawInviteToken,
     });
 
-    await this.authService.recordAuthAudit(userId, actorId, 'USER_INVITED', ipAddress, {
+    await this.authService.recordAuthAudit(userId, actor.id, 'USER_INVITED', ipAddress, {
       role: input.role,
       tenantIds: input.tenantIds,
     });
@@ -101,7 +144,7 @@ export class StaffUsersService {
   }
 
   async update(
-    actorId: string,
+    actor: AuthenticatedStaffUser,
     userId: string,
     input: { fullName?: string; role?: StaffRole; isActive?: boolean; tenantIds?: string[] },
     ipAddress?: string,
@@ -113,6 +156,21 @@ export class StaffUsersService {
     });
     if (!existing) {
       throw new DomainError('USER_NOT_FOUND', 'Usuario no encontrado.', 404);
+    }
+
+    const existingTenantIds = existing.tenants.map((t) => t.tenantId);
+    if (actor.role !== 'SUPERADMIN') {
+      const sharesTenant = existingTenantIds.some((id) => actor.tenantIds.includes(id));
+      if (!ADMIN_MANAGED_ROLES.includes(existing.role) || !sharesTenant) {
+        throw new DomainError(
+          'USER_ACCESS_DENIED',
+          'No tienes permiso para modificar este usuario.',
+          403,
+        );
+      }
+      const nextRole = input.role ?? existing.role;
+      const nextTenants = input.tenantIds ?? existingTenantIds;
+      this.assertAdminScope(actor, nextRole, nextTenants);
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -144,14 +202,14 @@ export class StaffUsersService {
 
     await this.authService.recordAuthAudit(
       userId,
-      actorId,
+      actor.id,
       input.isActive === false ? 'USER_DEACTIVATED' : 'USER_UPDATED',
       ipAddress,
       {
         before: {
           role: existing.role,
           isActive: existing.isActive,
-          tenantIds: existing.tenants.map((t) => t.tenantId),
+          tenantIds: existingTenantIds,
         },
         after: input,
       },
@@ -175,7 +233,12 @@ export class StaffUsersService {
     };
   }
 
-  async deactivate(actorId: string, userId: string, ipAddress?: string, now: Date = new Date()) {
-    return this.update(actorId, userId, { isActive: false }, ipAddress, now);
+  async deactivate(
+    actor: AuthenticatedStaffUser,
+    userId: string,
+    ipAddress?: string,
+    now: Date = new Date(),
+  ) {
+    return this.update(actor, userId, { isActive: false }, ipAddress, now);
   }
 }

@@ -11,23 +11,23 @@ import { StaffUsersService } from './staff-users.service.js';
 export class StaffUsersController {
   constructor(@Inject(StaffUsersService) private readonly staffUsersService: StaffUsersService) {}
 
-  @Roles('SUPERADMIN')
+  @Roles('SUPERADMIN', 'ADMIN')
   @Get()
-  list() {
-    return this.staffUsersService.list();
+  list(@CurrentUser() actor: AuthenticatedStaffUser) {
+    return this.staffUsersService.list(actor);
   }
 
-  @Roles('SUPERADMIN')
+  @Roles('SUPERADMIN', 'ADMIN')
   @Post('invite')
   invite(
     @CurrentUser() actor: AuthenticatedStaffUser,
     @Body() dto: InviteStaffUserDto,
     @Req() req: { ip?: string },
   ) {
-    return this.staffUsersService.invite(actor.id, dto, req.ip);
+    return this.staffUsersService.invite(actor, dto, req.ip);
   }
 
-  @Roles('SUPERADMIN')
+  @Roles('SUPERADMIN', 'ADMIN')
   @Patch(':id')
   update(
     @CurrentUser() actor: AuthenticatedStaffUser,
@@ -35,16 +35,16 @@ export class StaffUsersController {
     @Body() dto: UpdateStaffUserDto,
     @Req() req: { ip?: string },
   ) {
-    return this.staffUsersService.update(actor.id, id, dto, req.ip);
+    return this.staffUsersService.update(actor, id, dto, req.ip);
   }
 
-  @Roles('SUPERADMIN')
+  @Roles('SUPERADMIN', 'ADMIN')
   @Delete(':id')
   deactivate(
     @CurrentUser() actor: AuthenticatedStaffUser,
     @Param('id') id: string,
     @Req() req: { ip?: string },
   ) {
-    return this.staffUsersService.deactivate(actor.id, id, req.ip);
+    return this.staffUsersService.deactivate(actor, id, req.ip);
   }
 }

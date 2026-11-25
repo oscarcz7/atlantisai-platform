@@ -7,15 +7,27 @@ import {
   Building2,
   CalendarDays,
   Home,
+  Plus,
   Receipt,
   Search,
   ShieldCheck,
   SlidersHorizontal,
+  UserCog,
   Users,
   Wrench,
 } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
+import { ModuleHero } from '../../components/habitat-ui';
+import { authApi, type StaffProfile } from '../../lib/api/auth';
 import { useDashboard } from '../../lib/dashboard-context';
+
+interface TenantSummary {
+  id: string;
+  code: string;
+  name: string;
+  ruc: string | null;
+  timezone: string;
+}
 
 interface UnitRow {
   id: string;
@@ -62,6 +74,113 @@ const URGENCY_LABELS: Record<IncidentRow['urgency'], { label: string; cls: strin
 
 const WORK_COLORS = ['work-coral', 'work-gold', 'work-sage'];
 
+function SuperAdminOverview() {
+  const { token, apiFetch } = useDashboard();
+  const [tenants, setTenants] = useState<TenantSummary[]>([]);
+  const [users, setUsers] = useState<StaffProfile[]>([]);
+
+  useEffect(() => {
+    Promise.all([
+      apiFetch<TenantSummary[]>('/tenants').catch(() => []),
+      authApi.listStaffUsers(token).catch(() => []),
+    ]).then(([t, u]) => {
+      setTenants(t);
+      setUsers(u);
+    });
+  }, [apiFetch, token]);
+
+  const admins = users.filter((u) => u.role === 'ADMIN');
+  const activeAdmins = admins.filter((u) => u.isActive !== false);
+
+  return (
+    <section className="internal-page">
+      <ModuleHero
+        eyebrow="CONSOLA SAAS · SUPERADMIN"
+        title="Panel de plataforma NOAH"
+        description="Crea edificios con su configuración base y asigna administradores responsables. Cada administrador gestiona la operación y el equipo de sus edificios."
+        icon={Building2}
+        actions={
+          <>
+            <Link href="/dashboard/users" className="h-btn-outline">
+              <UserCog size={14} /> Gestionar administradores
+            </Link>
+            <Link href="/dashboard/buildings" className="h-btn-dark">
+              <Plus size={15} /> Nuevo edificio
+            </Link>
+          </>
+        }
+      />
+
+      <div className="h-kpi-strip">
+        <article className="h-kpi-card" style={{ background: 'linear-gradient(145deg,#fa865c,#ee5835)', color: '#fff', borderColor: 'transparent' }}>
+          <span style={{ color: '#ffffffd8' }}>Edificios activos</span>
+          <strong>{String(tenants.length).padStart(2, '0')}</strong>
+          <small style={{ color: '#ffffffd0' }}>con aislamiento RLS en BD</small>
+        </article>
+        <article className="h-kpi-card">
+          <span>Administradores</span>
+          <strong>{String(activeAdmins.length).padStart(2, '0')}</strong>
+          <small>de {admins.length} registrados</small>
+        </article>
+        <article className="h-kpi-card">
+          <span>Personal total en plataforma</span>
+          <strong>{String(users.length).padStart(2, '0')}</strong>
+          <small>SuperAdmin, Admins, Contadores y Guardias</small>
+        </article>
+      </div>
+
+      <div className="h-table-wrap">
+        <div style={{ padding: '16px 20px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '16px' }}>Edificios y administradores asignados</h2>
+            <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--muted-foreground)' }}>
+              Cada edificio opera de forma independiente con su administrador asignado.
+            </p>
+          </div>
+          <Link href="/dashboard/buildings" className="text-action" style={{ padding: '6px 12px', fontSize: '12px' }}>
+            Administrar edificios <ArrowUpRight size={13} />
+          </Link>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Edificio</th>
+              <th>Código / RUC</th>
+              <th>Administradores asignados</th>
+              <th style={{ textAlign: 'right' }}>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tenants.map((t) => {
+              const assignedAdmins = admins.filter((a) => a.tenants.some((at) => at.id === t.id));
+              return (
+                <tr key={t.id}>
+                  <td style={{ fontWeight: 600 }}>{t.name}</td>
+                  <td style={{ fontSize: '12.5px', color: 'var(--muted-foreground)' }}>
+                    <code>{t.code}</code> {t.ruc ? `· ${t.ruc}` : ''}
+                  </td>
+                  <td>
+                    {assignedAdmins.length === 0 ? (
+                      <span style={{ color: 'var(--color-warning)', fontSize: '12.5px' }}>Sin administrador asignado</span>
+                    ) : (
+                      assignedAdmins.map((a) => a.fullName).join(', ')
+                    )}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <Link href="/dashboard/users" className="h-btn-outline h-btn-sm" style={{ textDecoration: 'none' }}>
+                      Asignar admin
+                    </Link>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export default function DashboardOverviewPage() {
   const { me, tenantId, apiFetch } = useDashboard();
   const [units, setUnits] = useState<UnitRow[]>([]);
@@ -75,7 +194,7 @@ export default function DashboardOverviewPage() {
   const activeTenant = me.tenants.find((t) => t.id === tenantId);
 
   const load = useCallback(async () => {
-    if (!tenantId) return;
+    if (!tenantId || me.role === 'SUPERADMIN') return;
     const [u, p, r, inc, rep] = await Promise.all([
       apiFetch<UnitRow[]>('/cadastre/units').catch(() => []),
       apiFetch<PersonRow[]>('/cadastre/persons').catch(() => []),
@@ -98,6 +217,26 @@ export default function DashboardOverviewPage() {
     void load();
   }, [load]);
 
+  const upcomingReservations = useMemo(() => {
+    return reservations
+      .filter((r) => r.status === 'CONFIRMED' || r.status === 'IN_REVIEW')
+      .slice(0, 4);
+  }, [reservations]);
+
+  const visibleIncidents = useMemo(() => {
+    return incidents.filter((inc) => {
+      const matchQuery = `${inc.category} ${inc.location} ${inc.description}`
+        .toLowerCase()
+        .includes(query.toLowerCase());
+      const matchStatus = statusFilter === 'ALL' || inc.status === statusFilter;
+      return matchQuery && matchStatus;
+    });
+  }, [incidents, query, statusFilter]);
+
+  if (me.role === 'SUPERADMIN') {
+    return <SuperAdminOverview />;
+  }
+
   const occupiedUnits = units.filter((u) => u.occupancies.length > 0).length;
   const occupancyPct = units.length > 0 ? Math.round((occupiedUnits / units.length) * 100) : 0;
   const floorsCount = units.length > 0 ? new Set(units.map((u) => u.floor)).size : 0;
@@ -117,22 +256,6 @@ export default function DashboardOverviewPage() {
   );
   const billedCents =
     summary?.ledgerByType?.find((l) => l.type === 'MONTHLY_FEE')?.totalCents ?? 0;
-
-  const upcomingReservations = useMemo(() => {
-    return reservations
-      .filter((r) => r.status === 'CONFIRMED' || r.status === 'IN_REVIEW')
-      .slice(0, 4);
-  }, [reservations]);
-
-  const visibleIncidents = useMemo(() => {
-    return incidents.filter((inc) => {
-      const matchQuery = `${inc.category} ${inc.location} ${inc.description}`
-        .toLowerCase()
-        .includes(query.toLowerCase());
-      const matchStatus = statusFilter === 'ALL' || inc.status === statusFilter;
-      return matchQuery && matchStatus;
-    });
-  }, [incidents, query, statusFilter]);
 
   const todayLabel = new Intl.DateTimeFormat('es-EC', {
     weekday: 'long',
@@ -156,19 +279,20 @@ export default function DashboardOverviewPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {(me.role === 'SUPERADMIN' || me.role === 'ADMIN') && (
+          {me.role === 'ADMIN' && (
             <Link href="/dashboard/config" className="download-button">
               Configurar edificio <ArrowUpRight size={15} />
             </Link>
           )}
-          <Link href="/dashboard/reservations" className="download-button">
-            Ir a reservas <ArrowUpRight size={15} />
-          </Link>
+          {me.role !== 'ACCOUNTANT' && (
+            <Link href="/dashboard/reservations" className="download-button">
+              Ir a reservas <ArrowUpRight size={15} />
+            </Link>
+          )}
         </div>
       </div>
 
       <div className="dashboard-grid">
-        {/* Card 1: Building Overview */}
         <section className="panel balance-card">
           <div>
             <div className="panel-eyebrow">
@@ -179,10 +303,10 @@ export default function DashboardOverviewPage() {
             </div>
             <div className="building-name-row">
               <div>
-                <h2>{activeTenant?.name ?? 'Edificio NOAH'}</h2>
+                <h2>{activeTenant?.name ?? 'Edificio'}</h2>
                 <p>
                   <span className="online-dot" />
-                  Código: {activeTenant?.code ?? 'noah'}
+                  Código: {activeTenant?.code ?? '—'}
                 </p>
               </div>
             </div>
@@ -234,7 +358,6 @@ export default function DashboardOverviewPage() {
           </div>
         </section>
 
-        {/* Card 2: 4 KPI Metric Cards */}
         <section className="metric-grid" aria-label="Indicadores clave">
           <article className="panel metric-card metric-featured">
             <div className="metric-top">
@@ -301,7 +424,6 @@ export default function DashboardOverviewPage() {
           </article>
         </section>
 
-        {/* Card 3: Balance Chart */}
         <section className="panel income-panel" aria-labelledby="collection-title">
           <div className="section-heading">
             <div>
@@ -344,7 +466,6 @@ export default function DashboardOverviewPage() {
           </div>
         </section>
 
-        {/* Left Stack: Upcoming Reservations */}
         <div className="left-stack">
           <section className="panel cards-panel">
             <div className="section-heading">
@@ -352,9 +473,11 @@ export default function DashboardOverviewPage() {
                 <CalendarDays size={17} />
                 <h2>Próximas reservas</h2>
               </div>
-              <Link href="/dashboard/reservations" className="add-card" style={{ padding: '6px 10px', fontSize: '11px' }}>
-                + Nueva
-              </Link>
+              {me.role === 'ADMIN' && (
+                <Link href="/dashboard/reservations" className="add-card" style={{ padding: '6px 10px', fontSize: '11px' }}>
+                  + Nueva
+                </Link>
+              )}
             </div>
 
             <div className="work-list">
@@ -377,11 +500,7 @@ export default function DashboardOverviewPage() {
                   const areaNames =
                     res.amenities?.map((a) => a.amenity.name).join(' + ') || 'Área comunal';
                   return (
-                    <Link
-                      key={res.id}
-                      href="/dashboard/reservations"
-                      className="work-item"
-                    >
+                    <Link key={res.id} href="/dashboard/reservations" className="work-item">
                       <span className={`work-date ${WORK_COLORS[idx % WORK_COLORS.length]}`}>
                         <b>{day}</b>
                         <small>{month}</small>
@@ -405,7 +524,6 @@ export default function DashboardOverviewPage() {
           </section>
         </div>
 
-        {/* Right Activity Panel: Recent Incidents */}
         <section className="panel activity-panel" aria-labelledby="requests-title">
           <div className="activity-header">
             <div className="requests-heading">
@@ -438,7 +556,7 @@ export default function DashboardOverviewPage() {
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
                   <th style={{ padding: '10px 12px' }}>Solicitud</th>
-                  <th style={{ padding: '10px 12px' }}>Unidad</th>
+                  <th style={{ padding: '10px 12px' }}>Ubicación</th>
                   <th style={{ padding: '10px 12px' }}>Urgencia</th>
                   <th style={{ padding: '10px 12px' }}>Estado</th>
                 </tr>
@@ -459,9 +577,7 @@ export default function DashboardOverviewPage() {
                           <div style={{ fontWeight: 600 }}>{inc.description}</div>
                           <div style={{ fontSize: '11px', color: 'var(--muted-foreground)' }}>{inc.category}</div>
                         </td>
-                        <td style={{ padding: '11px 12px' }}>
-                          {inc.location || 'Área común'}
-                        </td>
+                        <td style={{ padding: '11px 12px' }}>{inc.location || 'Área común'}</td>
                         <td style={{ padding: '11px 12px' }}>
                           <span
                             style={{

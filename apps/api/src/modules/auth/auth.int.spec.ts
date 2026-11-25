@@ -18,6 +18,15 @@ describe('Auth & StaffUsers integration (Spec 002)', () => {
   const tenantAId = generateUuidV7();
   const tenantBId = generateUuidV7();
   const actorId = generateUuidV7();
+  const superAdminActor = {
+    id: actorId,
+    email: 'super@noah.test',
+    fullName: 'SuperAdmin Test',
+    role: 'SUPERADMIN' as const,
+    totpEnabled: true,
+    tenantIds: [],
+    tokenScope: 'full' as const,
+  };
   const testEmail = `admin-${tenantAId.slice(0, 8)}@noah.test`;
   const expiredInviteEmail = `expired-${tenantAId.slice(0, 8)}@noah.test`;
 
@@ -46,7 +55,7 @@ describe('Auth & StaffUsers integration (Spec 002)', () => {
 
     // 1. Invite user (72h expiry)
     const invited = await staffUsersService.invite(
-      actorId,
+      superAdminActor,
       { email: testEmail, fullName: 'Admin Prueba', role: 'ADMIN', tenantIds: [tenantAId] },
       '127.0.0.1',
       t0,
@@ -56,7 +65,7 @@ describe('Auth & StaffUsers integration (Spec 002)', () => {
 
     // 2. Expired invite (>72h) must fail
     await staffUsersService.invite(
-      actorId,
+      superAdminActor,
       { email: expiredInviteEmail, fullName: 'Expired User', role: 'GUARD', tenantIds: [tenantAId] },
       '127.0.0.1',
       t0,
@@ -104,13 +113,13 @@ describe('Auth & StaffUsers integration (Spec 002)', () => {
     expect(loggedIn.tokens?.accessToken).toBeTruthy();
 
     // 8. Deactivating user immediately revokes active sessions
-    await staffUsersService.deactivate(actorId, invited.id, '127.0.0.1', after31Min);
+    await staffUsersService.deactivate(superAdminActor, invited.id, '127.0.0.1', after31Min);
     await expect(
       authService.refresh(loggedIn.tokens!.refreshToken, {}, after31Min),
     ).rejects.toMatchObject({ code: 'SESSION_INVALID' });
 
     // 9. Re-activate and test 5 failed login attempts -> 15 min lock
-    await staffUsersService.update(actorId, invited.id, { isActive: true }, '127.0.0.1', after31Min);
+    await staffUsersService.update(superAdminActor, invited.id, { isActive: true }, '127.0.0.1', after31Min);
     for (let i = 0; i < 4; i++) {
       await expect(
         authService.login({ email: testEmail, password: 'WrongPassword!' }, {}, after31Min),

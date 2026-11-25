@@ -23,7 +23,7 @@ import { type StaffProfile } from '../../lib/api/auth';
 import { DashboardProvider, useDashboard } from '../../lib/dashboard-context';
 
 const ROLE_LABELS: Record<StaffProfile['role'], string> = {
-  SUPERADMIN: 'SuperAdmin',
+  SUPERADMIN: 'SuperAdmin SaaS',
   ADMIN: 'Administrador',
   ACCOUNTANT: 'Contador',
   GUARD: 'Guardia',
@@ -37,78 +37,30 @@ interface NavItem {
   roles: StaffProfile['role'][];
 }
 
-const NAV_ITEMS: NavItem[] = [
-  {
-    href: '/dashboard',
-    label: 'Resumen',
-    shortLabel: 'Resumen',
-    icon: LayoutDashboard,
-    roles: ['SUPERADMIN', 'ADMIN', 'ACCOUNTANT', 'GUARD'],
-  },
-  {
-    href: '/dashboard/buildings',
-    label: 'Edificios',
-    shortLabel: 'Edificios',
-    icon: Building2,
-    roles: ['SUPERADMIN', 'ADMIN'],
-  },
-  {
-    href: '/dashboard/config',
-    label: 'Configurador',
-    shortLabel: 'Config',
-    icon: SlidersHorizontal,
-    roles: ['SUPERADMIN', 'ADMIN'],
-  },
-  {
-    href: '/dashboard/cadastre',
-    label: 'Catastro',
-    shortLabel: 'Catastro',
-    icon: Users,
-    roles: ['SUPERADMIN', 'ADMIN', 'ACCOUNTANT'],
-  },
-  {
-    href: '/dashboard/reservations',
-    label: 'Reservas',
-    shortLabel: 'Reservas',
-    icon: CalendarDays,
-    roles: ['SUPERADMIN', 'ADMIN', 'GUARD'],
-  },
-  {
-    href: '/dashboard/billing',
-    label: 'Finanzas',
-    shortLabel: 'Finanzas',
-    icon: Receipt,
-    roles: ['SUPERADMIN', 'ADMIN', 'ACCOUNTANT'],
-  },
-  {
-    href: '/dashboard/garita',
-    label: 'Garita',
-    shortLabel: 'Garita',
-    icon: Shield,
-    roles: ['SUPERADMIN', 'ADMIN', 'GUARD'],
-  },
-  {
-    href: '/dashboard/incidents',
-    label: 'Incidencias',
-    shortLabel: 'Tickets',
-    icon: Wrench,
-    roles: ['SUPERADMIN', 'ADMIN', 'GUARD'],
-  },
-  {
-    href: '/dashboard/audit',
-    label: 'Informes',
-    shortLabel: 'Informes',
-    icon: Activity,
-    roles: ['SUPERADMIN', 'ADMIN', 'ACCOUNTANT'],
-  },
-  {
-    href: '/dashboard/users',
-    label: 'Usuarios',
-    shortLabel: 'Staff',
-    icon: UserCog,
-    roles: ['SUPERADMIN'],
-  },
-];
+function getNavForRole(role: StaffProfile['role']): NavItem[] {
+  if (role === 'SUPERADMIN') {
+    return [
+      { href: '/dashboard', label: 'Resumen SaaS', shortLabel: 'Resumen', icon: LayoutDashboard, roles: ['SUPERADMIN'] },
+      { href: '/dashboard/buildings', label: 'Edificios', shortLabel: 'Edificios', icon: Building2, roles: ['SUPERADMIN'] },
+      { href: '/dashboard/users', label: 'Administradores', shortLabel: 'Admins', icon: UserCog, roles: ['SUPERADMIN'] },
+    ];
+  }
+
+  const allOperational: NavItem[] = [
+    { href: '/dashboard', label: 'Resumen', shortLabel: 'Resumen', icon: LayoutDashboard, roles: ['ADMIN', 'ACCOUNTANT'] },
+    { href: '/dashboard/garita', label: 'Garita', shortLabel: 'Garita', icon: Shield, roles: ['ADMIN', 'GUARD'] },
+    { href: '/dashboard/reservations', label: 'Reservas', shortLabel: 'Reservas', icon: CalendarDays, roles: ['ADMIN', 'GUARD'] },
+    { href: '/dashboard/cadastre', label: 'Catastro', shortLabel: 'Catastro', icon: Users, roles: ['ADMIN', 'ACCOUNTANT'] },
+    { href: '/dashboard/billing', label: 'Finanzas', shortLabel: 'Finanzas', icon: Receipt, roles: ['ADMIN', 'ACCOUNTANT'] },
+    { href: '/dashboard/incidents', label: 'Incidencias', shortLabel: 'Tickets', icon: Wrench, roles: ['ADMIN', 'GUARD'] },
+    { href: '/dashboard/config', label: 'Configurador', shortLabel: 'Config', icon: SlidersHorizontal, roles: ['ADMIN'] },
+    { href: '/dashboard/buildings', label: 'Mi Edificio', shortLabel: 'Edificio', icon: Building2, roles: ['ADMIN'] },
+    { href: '/dashboard/users', label: 'Equipo', shortLabel: 'Equipo', icon: UserCog, roles: ['ADMIN'] },
+    { href: '/dashboard/audit', label: 'Informes', shortLabel: 'Informes', icon: Activity, roles: ['ADMIN', 'ACCOUNTANT'] },
+  ];
+
+  return allOperational.filter((item) => item.roles.includes(role));
+}
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -120,13 +72,19 @@ function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { me, tenantId, setTenantId, logout } = useDashboard();
 
-  const visibleItems = NAV_ITEMS.filter((item) => item.roles.includes(me.role));
-  const activeTenantName = me.tenants.find((t) => t.id === tenantId)?.name ?? 'NOAH';
+  const visibleItems = getNavForRole(me.role);
+  const isSuperAdmin = me.role === 'SUPERADMIN';
+  const activeTenantName = me.tenants.find((t) => t.id === tenantId)?.name ?? 'Plataforma NOAH';
 
   return (
     <div className="dashboard-shell">
       <aside className="sidebar" aria-label="Navegación principal">
-        <Link className="brand-mark" href="/dashboard" aria-label="Inicio de NOAH" title="NOAH">
+        <Link
+          className="brand-mark"
+          href={me.role === 'GUARD' ? '/dashboard/garita' : '/dashboard'}
+          aria-label="Inicio de NOAH"
+          title="NOAH"
+        >
           <Building2 size={20} strokeWidth={2.3} />
         </Link>
 
@@ -150,7 +108,7 @@ function Shell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="sidebar-bottom">
-          {(me.role === 'SUPERADMIN' || me.role === 'ADMIN') && (
+          {me.role === 'ADMIN' && (
             <Link href="/dashboard/config" className="icon-button" title="Configurador" aria-label="Configurador">
               <Settings size={18} />
             </Link>
@@ -169,7 +127,7 @@ function Shell({ children }: { children: ReactNode }) {
 
       <div className="dashboard-main">
         <header className="topbar">
-          <Link href="/dashboard" className="brand">
+          <Link href={me.role === 'GUARD' ? '/dashboard/garita' : '/dashboard'} className="brand">
             <span className="brand-symbol">
               <Building2 size={19} />
             </span>
@@ -195,20 +153,24 @@ function Shell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="topbar-right">
-            {me.tenants.length > 0 && (
-              <label className="tenant-pill" title="Edificio activo">
+            {!isSuperAdmin && me.tenants.length > 0 && (
+              <label className="tenant-pill" title="Edificio activo (todos los cambios aplican solo a este edificio)">
                 <Building2 size={14} style={{ color: 'var(--primary)' }} />
-                <select
-                  aria-label="Edificio activo"
-                  value={tenantId}
-                  onChange={(e) => setTenantId(e.target.value)}
-                >
-                  {me.tenants.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
+                {me.tenants.length === 1 ? (
+                  <span style={{ fontWeight: 600, fontSize: '12.5px' }}>{me.tenants[0]!.name}</span>
+                ) : (
+                  <select
+                    aria-label="Edificio activo"
+                    value={tenantId}
+                    onChange={(e) => setTenantId(e.target.value)}
+                  >
+                    {me.tenants.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </label>
             )}
 
@@ -246,12 +208,15 @@ function Shell({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        <main className="dashboard-content">{children}</main>
+        {/* Keying by tenantId guarantees a clean remount on building switch: zero stale forms or cross-building leakage */}
+        <main key={isSuperAdmin ? 'saas' : tenantId} className="dashboard-content">
+          {children}
+        </main>
 
         <footer className="dashboard-footer">
-          <span>© 2026 NOAH · {activeTenantName}</span>
+          <span>© 2026 NOAH · {isSuperAdmin ? 'Consola SaaS' : activeTenantName}</span>
           <span>
-            <Clock3 size={12} /> Plataforma multi-edificio en tiempo real
+            <Clock3 size={12} /> {isSuperAdmin ? 'Gestión multi-edificio' : 'Aislamiento activo por edificio'}
           </span>
         </footer>
       </div>

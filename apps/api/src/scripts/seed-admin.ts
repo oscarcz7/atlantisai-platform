@@ -39,6 +39,26 @@ async function main() {
     process.stdout.write(`SuperAdmin ya existe: ${email}\n`);
   }
 
+  // Also seed a building ADMIN account for Edificio NOAH so both worlds can be tested out of the box
+  const bldgAdminEmail = 'administrador@edificionoah.com';
+  const existingBldgAdmin = await prisma.staffUser.findUnique({ where: { email: bldgAdminEmail } });
+  if (!existingBldgAdmin) {
+    await prisma.staffUser.create({
+      data: {
+        id: generateUuidV7(),
+        email: bldgAdminEmail,
+        fullName: 'Administrador NOAH',
+        passwordHash,
+        role: 'ADMIN',
+        isActive: true,
+        tenants: { create: [{ tenantId: tenant.id }] },
+      },
+    });
+    process.stdout.write(`Administrador creado: ${bldgAdminEmail} (Edificio: ${tenant.name})\n`);
+  } else {
+    process.stdout.write(`Administrador ya existe: ${bldgAdminEmail}\n`);
+  }
+
   await prisma.$disconnect();
 }
 
