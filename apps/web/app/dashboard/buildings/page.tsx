@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Building2, Copy, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Building2, Copy, Pencil, Plus, Trash2, UserCheck } from 'lucide-react';
 import { HabitatDrawer, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
+import { authApi, type StaffProfile } from '../../../lib/api/auth';
 import { useDashboard } from '../../../lib/dashboard-context';
 
 interface BankAccount {
@@ -39,11 +40,14 @@ interface TenantDto {
     weekends?: string;
   } | null;
   bankAccounts: BankAccount[] | null;
+  admins?: Array<{ id: string; fullName: string; email: string; isActive: boolean }>;
 }
 
 export default function BuildingsPage() {
-  const { me, tenantId, setTenantId, refreshMe, apiFetch } = useDashboard();
+  const { token, me, tenantId, setTenantId, refreshMe, apiFetch } = useDashboard();
   const [tenants, setTenants] = useState<TenantDto[]>([]);
+  const [adminUsers, setAdminUsers] = useState<StaffProfile[]>([]);
+  const [selectedAdminIds, setSelectedAdminIds] = useState<string[]>([]);
   const [drawer, setDrawer] = useState<'none' | 'create' | 'edit' | 'clone'>('none');
   const [editing, setEditing] = useState<TenantDto | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -76,9 +80,13 @@ export default function BuildingsPage() {
   const canEdit = me.role === 'SUPERADMIN' || me.role === 'ADMIN';
 
   const load = useCallback(async () => {
-    const list = await apiFetch<TenantDto[]>('/tenants');
+    const [list, users] = await Promise.all([
+      apiFetch<TenantDto[]>('/tenants'),
+      isSuperAdmin ? authApi.listStaffUsers(token).catch(() => []) : Promise.resolve([]),
+    ]);
     setTenants(list);
-  }, [apiFetch]);
+    setAdminUsers(users.filter((u) => u.role === 'ADMIN'));
+  }, [apiFetch, isSuperAdmin, token]);
 
   useEffect(() => {
     void load();
@@ -104,6 +112,7 @@ export default function BuildingsPage() {
     setWaClose('17:00');
     setWeekends('Solo emergencias por WhatsApp');
     setBankAccounts([{ ...EMPTY_BANK }]);
+    setSelectedAdminIds([]);
     setDrawer('create');
   }
 
@@ -138,7 +147,20 @@ export default function BuildingsPage() {
           }))
         : [{ ...EMPTY_BANK }],
     );
+    setSelectedAdminIds(t.admins?.map((a) => a.id) ?? []);
     setDrawer('edit');
+  }
+
+  function toggleAdminUser(admin: StaffProfile) {
+    const already = selectedAdminIds.includes(admin.id);
+    setSelectedAdminIds((prev) =>
+      already ? prev.filter((id) => id !== admin.id) : [...prev, admin.id],
+    );
+    // Auto-fill public contact fields if empty when selecting an admin
+    if (!already) {
+      if (!adminContact.trim()) setAdminContact(admin.fullName);
+      if (!adminEmail.trim()) setAdminEmail(admin.email);
+    }
   }
 
   function updateBankAccount(index: number, patch: Partial<BankAccount>) {
@@ -196,6 +218,7 @@ export default function BuildingsPage() {
           rucOrId: b.rucOrId.trim(),
           purpose: b.purpose ?? 'General',
         })),
+      ...(isSuperAdmin ? { adminUserIds: selectedAdminIds } : {}),
     };
 
     try {
@@ -363,13 +386,18 @@ export default function BuildingsPage() {
                 }}
               >
                 <div>
-                  <div style={{ color: 'var(--muted-foreground)', fontSize: '11px', marginBottom: '2px' }}>Administración</div>
+                  <div style={{ color: 'var(--muted-foreground)', fontSize: '11px', marginBottom: '2px' }}>
+                    Administradores del sistema
+                  </div>
                   <div style={{ fontWeight: 600 }}>
-                    {t.contacts?.administrator?.company || '—'}
-                    {t.contacts?.administrator?.contactName ? ` (${t.contacts.administrator.contactName})` : ''}
+                    {t.admins && t.admins.length > 0
+                      ? t.admins.map((a) => a.fullName).join(', ')
+                      : 'Sin asignar'}
                   </div>
                   <div style={{ color: 'var(--muted-foreground)', fontSize: '12px' }}>
-                    {t.contacts?.administrator?.phone || ''} {t.contacts?.administrator?.email ? `· ${t.contacts.administrator.email}` : ''}
+                    {t.contacts?.administrator?.company
+                      ? `Empresa: ${t.contacts.administrator.company}`
+                      : t.contacts?.administrator?.email || ''}
                   </div>
                 </div>
                 <div>
@@ -441,8 +469,49 @@ export default function BuildingsPage() {
             </label>
           </div>
 
+          {isSuperAdmin && (
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px', display: 'grid', gap: '8px' }}>
+              <h3 style={{ margin: 0, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <UserCheck size={14} /> Administradores con acceso al sistema
+              </h3>
+              <p style={{ margin: 0, fontSize: '12px', color: 'var(--muted-foreground)' }}>
+                Selecciona qué usuario(s) con rol Administrador operan este edificio. Si el contacto público está vacío, se autocompleta con sus datos.
+              </p>
+              <div
+                style={{
+                  display: 'grid',
+                  gap: '6px',
+                  padding: '10px 12px',
+                  borderRadius: '12px',
+                  border: '1px solid var(--border)',
+                  background: 'var(--background)',
+                }}
+              >
+                {adminUsers.length === 0 ? (
+                  <span style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>
+                    No hay usuarios Administrador creados aún (puedes crearlos en Administradores).
+                  </span>
+                ) : (
+                  adminUsers.map((u) => (
+                    <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedAdminIds.includes(u.id)}
+                        onChange={() => toggleAdminUser(u)}
+                      />
+                      <span>
+                        <strong>{u.fullName}</strong>{' '}
+                        <span style={{ color: 'var(--muted-foreground)', fontSize: '12px' }}>({u.email})</span>
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
           <h3 style={{ margin: '6px 0 0', fontSize: '13px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
-            Administración y Seguridad
+            Contacto público para residentes (WhatsApp y recibos)
           </h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <label className="h-field">

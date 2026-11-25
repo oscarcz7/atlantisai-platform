@@ -67,12 +67,60 @@ export class TenantsService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async listForUser(user: { role: string; tenantIds: string[] }) {
-    if (user.role === 'SUPERADMIN') {
-      return this.prisma.tenant.findMany({ orderBy: { name: 'asc' } });
-    }
-    return this.prisma.tenant.findMany({
-      where: { id: { in: user.tenantIds } },
-      orderBy: { name: 'asc' },
+    const includeAdmins = {
+      staffUsers: {
+        where: { staffUser: { role: 'ADMIN' as const } },
+        include: {
+          staffUser: { select: { id: true, fullName: true, email: true, isActive: true } },
+        },
+      },
+    };
+    const rows =
+      user.role === 'SUPERADMIN'
+        ? await this.prisma.tenant.findMany({ include: includeAdmins, orderBy: { name: 'asc' } })
+        : await this.prisma.tenant.findMany({
+            where: { id: { in: user.tenantIds } },
+            include: includeAdmins,
+            orderBy: { name: 'asc' },
+          });
+
+    return rows.map(({ staffUsers, ...tenant }) => ({
+      ...tenant,
+      admins: staffUsers.map((su) => su.staffUser),
+    }));
+  }
+
+  private async syncBuildingAdmins(tenantId: string, adminUserIds: string[]) {
+    const validAdmins =
+      adminUserIds.length > 0
+        ? await this.prisma.staffUser.findMany({
+            where: { id: { in: adminUserIds }, role: 'ADMIN' },
+            select: { id: true },
+          })
+        : [];
+    const validIds = validAdmins.map((u) => u.id);
+
+    await this.prisma.$transaction(async (tx) => {
+      // Only remove existing ADMIN links for this building (preserves ACCOUNTANT/GUARD assignments)
+      const currentAdminLinks = await tx.staffUserTenant.findMany({
+        where: { tenantId, staffUser: { role: 'ADMIN' } },
+        select: { staffUserId: true },
+      });
+      const currentIds = currentAdminLinks.map((l) => l.staffUserId);
+      const toRemove = currentIds.filter((id) => !validIds.includes(id));
+      const toAdd = validIds.filter((id) => !currentIds.includes(id));
+
+      if (toRemove.length > 0) {
+        await tx.staffUserTenant.deleteMany({
+          where: { tenantId, staffUserId: { in: toRemove } },
+        });
+      }
+      if (toAdd.length > 0) {
+        await tx.staffUserTenant.createMany({
+          data: toAdd.map((staffUserId) => ({ staffUserId, tenantId })),
+          skipDuplicates: true,
+        });
+      }
     });
   }
 
@@ -85,6 +133,7 @@ export class TenantsService {
     contacts?: Record<string, unknown>;
     officeHours?: Record<string, unknown>;
     bankAccounts?: Array<Record<string, unknown>>;
+    adminUserIds?: string[];
   }) {
     const code = input.code.trim().toLowerCase();
     const existing = await this.prisma.tenant.findUnique({ where: { code } });
@@ -105,6 +154,10 @@ export class TenantsService {
         bankAccounts: input.bankAccounts as Prisma.InputJsonValue | undefined,
       },
     });
+
+    if (input.adminUserIds && input.adminUserIds.length > 0) {
+      await this.syncBuildingAdmins(created.id, input.adminUserIds);
+    }
 
     // Initialize default settings & parking so the building is immediately configurable
     const ctx: TenantContext = {
@@ -156,9 +209,10 @@ export class TenantsService {
       contacts?: Record<string, unknown>;
       officeHours?: Record<string, unknown>;
       bankAccounts?: Array<Record<string, unknown>>;
+      adminUserIds?: string[];
     },
   ) {
-    return this.prisma.tenant.update({
+    const updated = await this.prisma.tenant.update({
       where: { id: tenantId },
       data: {
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
@@ -174,6 +228,12 @@ export class TenantsService {
           : {}),
       },
     });
+
+    if (input.adminUserIds !== undefined) {
+      await this.syncBuildingAdmins(tenantId, input.adminUserIds);
+    }
+
+    return updated;
   }
 
   /**

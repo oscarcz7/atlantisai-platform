@@ -29,6 +29,7 @@ export class TenantsController {
       contacts?: Record<string, unknown>;
       officeHours?: Record<string, unknown>;
       bankAccounts?: Array<Record<string, unknown>>;
+      adminUserIds?: string[];
     },
   ) {
     return this.tenantsService.create(body);
@@ -48,6 +49,7 @@ export class TenantsController {
       contacts?: Record<string, unknown>;
       officeHours?: Record<string, unknown>;
       bankAccounts?: Array<Record<string, unknown>>;
+      adminUserIds?: string[];
     },
   ) {
     if (user.role !== 'SUPERADMIN' && !user.tenantIds.includes(id)) {
@@ -56,7 +58,10 @@ export class TenantsController {
         message: 'No tienes permiso para editar este edificio.',
       });
     }
-    return this.tenantsService.update(id, body);
+    return this.tenantsService.update(id, {
+      ...body,
+      adminUserIds: user.role === 'SUPERADMIN' ? body.adminUserIds : undefined,
+    });
   }
 
   @Roles('SUPERADMIN')
