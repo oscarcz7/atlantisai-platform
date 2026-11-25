@@ -241,4 +241,34 @@ export class StaffUsersService {
   ) {
     return this.update(actor, userId, { isActive: false }, ipAddress, now);
   }
+
+  async removePermanently(
+    actor: AuthenticatedStaffUser,
+    userId: string,
+    ipAddress?: string,
+  ) {
+    if (actor.id === userId) {
+      throw new DomainError('CANNOT_DELETE_SELF', 'No puedes eliminar tu propia cuenta.', 422);
+    }
+    const existing = await this.prisma.staffUser.findUnique({
+      where: { id: userId },
+      include: { tenants: true },
+    });
+    if (!existing) {
+      throw new DomainError('USER_NOT_FOUND', 'Usuario no encontrado.', 404);
+    }
+    if (actor.role !== 'SUPERADMIN') {
+      const sharesTenant = existing.tenants.some((t) => actor.tenantIds.includes(t.tenantId));
+      if (!ADMIN_MANAGED_ROLES.includes(existing.role) || !sharesTenant) {
+        throw new DomainError('USER_ACCESS_DENIED', 'No tienes permiso para eliminar este usuario.', 403);
+      }
+    }
+    await this.prisma.staffUser.delete({ where: { id: userId } });
+    await this.authService.recordAuthAudit(null, actor.id, 'USER_DELETED', ipAddress, {
+      deletedUserId: userId,
+      email: existing.email,
+      role: existing.role,
+    });
+    return { deleted: true };
+  }
 }

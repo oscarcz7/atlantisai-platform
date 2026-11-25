@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Inject, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Inject, Param, Patch, Post } from '@nestjs/common';
 import {
   type AuthenticatedStaffUser,
   CurrentUser,
@@ -76,5 +76,11 @@ export class TenantsController {
     @Body() body: { code: string; name: string },
   ) {
     return this.tenantsService.cloneTenant(sourceId, body, user.id);
+  }
+
+  @Roles('SUPERADMIN')
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.tenantsService.deleteTenant(id);
   }
 }

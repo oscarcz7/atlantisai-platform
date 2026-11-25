@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Building2, Copy, Pencil, Plus } from 'lucide-react';
+import { Building2, Copy, Pencil, Plus, Trash2 } from 'lucide-react';
 import { HabitatDrawer, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
 
@@ -223,6 +223,21 @@ export default function BuildingsPage() {
     }
   }
 
+  async function handleDeleteBuilding(t: TenantDto) {
+    if (!window.confirm(`¿Eliminar el edificio "${t.name}" y toda su configuración? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    setFeedback(null);
+    try {
+      await apiFetch(`/tenants/${t.id}`, { method: 'DELETE' });
+      await refreshMe();
+      setFeedback({ type: 'ok', text: `Edificio "${t.name}" eliminado.` });
+      await load();
+    } catch (err) {
+      setFeedback({ type: 'err', text: err instanceof Error ? err.message : 'No se pudo eliminar el edificio.' });
+    }
+  }
+
   return (
     <section className="internal-page">
       <ModuleHero
@@ -305,9 +320,14 @@ export default function BuildingsPage() {
                     </button>
                   )}
                   {isSuperAdmin && (
-                    <button type="button" className="h-btn-outline h-btn-sm" onClick={() => openClone(t.id)}>
-                      <Copy size={13} /> Clonar
-                    </button>
+                    <>
+                      <button type="button" className="h-btn-outline h-btn-sm" onClick={() => openClone(t.id)}>
+                        <Copy size={13} /> Clonar
+                      </button>
+                      <button type="button" className="h-btn-danger h-btn-sm" onClick={() => void handleDeleteBuilding(t)}>
+                        <Trash2 size={13} /> Eliminar
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

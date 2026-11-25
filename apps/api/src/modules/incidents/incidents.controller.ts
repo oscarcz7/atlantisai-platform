@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   Param,
@@ -70,5 +71,11 @@ export class IncidentsController {
     @Body() body: { personId: string },
   ) {
     return this.incidentsService.subscribe(requireTenant(ctx), id, body.personId);
+  }
+
+  @Roles('SUPERADMIN', 'ADMIN')
+  @Delete(':id')
+  remove(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+    return this.incidentsService.remove(requireTenant(ctx), id);
   }
 }

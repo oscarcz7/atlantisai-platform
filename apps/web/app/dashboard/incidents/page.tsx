@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Plus, Wrench } from 'lucide-react';
+import { Plus, Trash2, Wrench } from 'lucide-react';
 import { StatusBadge } from '@noah/ui';
 import { HabitatDrawer, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
@@ -68,6 +68,13 @@ export default function IncidentsPage() {
     await loadData();
   }
 
+  async function handleDelete(id: string) {
+    if (!window.confirm('¿Eliminar esta incidencia permanentemente?')) return;
+    await apiFetch(`/incidents/${id}`, { method: 'DELETE' });
+    setNotice('Incidencia eliminada.');
+    await loadData();
+  }
+
   const openCount = tickets.filter((t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS').length;
   const highCount = tickets.filter((t) => t.urgency === 'HIGH' || t.urgency === 'EMERGENCY').length;
 
@@ -119,6 +126,7 @@ export default function IncidentsPage() {
                 <th>Descripción</th>
                 <th>Urgencia</th>
                 <th>Estado</th>
+                {canChangeStatus && <th style={{ textAlign: 'right' }}>Acciones</th>}
               </tr>
             </thead>
             <tbody>
@@ -163,6 +171,13 @@ export default function IncidentsPage() {
                         <StatusBadge status={t.status === 'CLOSED' || t.status === 'RESOLVED' ? 'COMPLETED' : 'IN_REVIEW'} />
                       )}
                     </td>
+                    {canChangeStatus && (
+                      <td style={{ textAlign: 'right' }}>
+                        <button type="button" className="h-btn-danger h-btn-sm" onClick={() => void handleDelete(t.id)}>
+                          <Trash2 size={12} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}

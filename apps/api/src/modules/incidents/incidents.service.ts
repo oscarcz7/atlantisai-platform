@@ -120,4 +120,28 @@ export class IncidentsService {
       }),
     );
   }
+
+  async remove(ctx: TenantContext, ticketId: string) {
+    return this.prisma.withTenant(ctx, async (tx) => {
+      const existing = await tx.ticket.findFirst({ where: { id: ticketId, tenantId: ctx.tenantId } });
+      if (!existing) {
+        throw new DomainError('TICKET_NOT_FOUND', 'Ticket no encontrado.', 404);
+      }
+      await tx.ticket.delete({ where: { id: ticketId } });
+      await tx.auditLog.create({
+        data: {
+          id: generateUuidV7(),
+          tenantId: ctx.tenantId,
+          actorType: ctx.actorType,
+          actorId: ctx.actorId,
+          action: 'TICKET_DELETED',
+          entity: 'Ticket',
+          entityId: ticketId,
+          channel: ctx.channel,
+          before: { category: existing.category, location: existing.location, status: existing.status },
+        },
+      });
+      return { deleted: true };
+    });
+  }
 }

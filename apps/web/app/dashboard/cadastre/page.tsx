@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Download, KeyRound, Pencil, Plus, UserPlus, Users } from 'lucide-react';
+import { Download, KeyRound, Pencil, Plus, Trash2, UserPlus, Users } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
 import { HabitatDrawer, HabitatTabs, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
@@ -213,6 +213,31 @@ export default function CadastrePage() {
     }
   }
 
+  async function handleDeleteUnit(u: UnitRow) {
+    if (!window.confirm(`¿Eliminar la unidad ${u.number}? (Si tiene historial de reservas o pagos se desactivará.)`)) return;
+    const res = await apiFetch<{ deleted: boolean; deactivated: boolean }>(`/cadastre/units/${u.id}`, {
+      method: 'DELETE',
+    });
+    setToast(res.deleted ? `Unidad ${u.number} eliminada.` : `Unidad ${u.number} desactivada (conserva historial).`);
+    await loadData();
+  }
+
+  async function handleDeletePerson(p: PersonRow) {
+    if (!window.confirm(`¿Eliminar a ${p.fullName}?`)) return;
+    const res = await apiFetch<{ deleted: boolean; deactivated: boolean }>(`/cadastre/persons/${p.id}`, {
+      method: 'DELETE',
+    });
+    setToast(res.deleted ? `${p.fullName} eliminado(a).` : `${p.fullName} desactivado(a) (conserva historial).`);
+    await loadData();
+  }
+
+  async function handleDeleteOccupancy(occupancyId: string, label: string) {
+    if (!window.confirm(`¿Quitar la ocupación de ${label}?`)) return;
+    await apiFetch(`/cadastre/occupancies/${occupancyId}`, { method: 'DELETE' });
+    setToast('Ocupación eliminada.');
+    await loadData();
+  }
+
   const occupiedCount = units.filter((u) => u.occupancies.length > 0).length;
 
   return (
@@ -326,15 +351,49 @@ export default function CadastrePage() {
                       <Money cents={u.monthlyFeeCents} />
                     </td>
                     <td style={{ fontSize: '12.5px' }}>
-                      {u.occupancies.length > 0 ? u.occupancies.map((o) => `${o.person.fullName} (${o.role})`).join(', ') : '—'}
+                      {u.occupancies.length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                          {u.occupancies.map((o) => (
+                            <span
+                              key={o.id}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '2px 8px',
+                                borderRadius: '999px',
+                                background: 'var(--muted)',
+                                fontSize: '11.5px',
+                              }}
+                            >
+                              {o.person.fullName} ({o.role})
+                              {canEdit && (
+                                <button
+                                  type="button"
+                                  title="Quitar ocupación"
+                                  onClick={() => void handleDeleteOccupancy(o.id, o.person.fullName)}
+                                  style={{ border: 0, background: 'transparent', cursor: 'pointer', color: '#b7544d', padding: '0 2px', fontWeight: 700 }}
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td>
                       <StatusBadge status={u.isActive ? 'OK' : 'CANCELLED'} />
                     </td>
                     {canEdit && (
-                      <td style={{ textAlign: 'right' }}>
-                        <button type="button" className="h-btn-outline h-btn-sm" onClick={() => openEditUnit(u)}>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <button type="button" className="h-btn-outline h-btn-sm" style={{ marginRight: '6px' }} onClick={() => openEditUnit(u)}>
                           <Pencil size={12} /> Editar
+                        </button>
+                        <button type="button" className="h-btn-danger h-btn-sm" onClick={() => void handleDeleteUnit(u)}>
+                          <Trash2 size={12} />
                         </button>
                       </td>
                     )}
@@ -357,6 +416,7 @@ export default function CadastrePage() {
                 <th>Cédula (enmascarada)</th>
                 <th>WhatsApp</th>
                 <th>Correo</th>
+                {canEdit && <th style={{ textAlign: 'right' }}>Acciones</th>}
               </tr>
             </thead>
             <tbody>
@@ -366,6 +426,13 @@ export default function CadastrePage() {
                   <td style={{ fontFamily: 'monospace' }}>{p.nationalId}</td>
                   <td>{p.waPhone}</td>
                   <td>{p.email ?? '—'}</td>
+                  {canEdit && (
+                    <td style={{ textAlign: 'right' }}>
+                      <button type="button" className="h-btn-danger h-btn-sm" onClick={() => void handleDeletePerson(p)}>
+                        <Trash2 size={12} /> Eliminar
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Pencil, Plus, UserCog } from 'lucide-react';
+import { Pencil, Plus, Trash2, UserCog } from 'lucide-react';
 import { StatusBadge } from '@noah/ui';
 import { HabitatDrawer, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
 import { ApiClientError, authApi, type StaffProfile, type StaffTenant } from '../../../lib/api/auth';
@@ -111,6 +111,13 @@ export default function StaffUsersPage() {
     await loadData();
   }
 
+  async function handleDeleteUser(u: StaffProfile) {
+    if (!window.confirm(`¿Eliminar permanentemente a ${u.fullName} (${u.email})? Esta acción no se puede deshacer.`)) return;
+    await authApi.deleteStaffUser(token, u.id);
+    setToast(`Usuario ${u.fullName} eliminado.`);
+    await loadData();
+  }
+
   return (
     <section className="internal-page">
       <ModuleHero
@@ -193,12 +200,20 @@ export default function StaffUsersPage() {
                           {u.isActive !== false && (
                             <button
                               type="button"
-                              className="h-btn-danger h-btn-sm"
+                              className="h-btn-outline h-btn-sm"
+                              style={{ marginRight: '6px' }}
                               onClick={() => void handleDeactivate(u.id)}
                             >
                               Desactivar
                             </button>
                           )}
+                          <button
+                            type="button"
+                            className="h-btn-danger h-btn-sm"
+                            onClick={() => void handleDeleteUser(u)}
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </>
                       )}
                     </td>

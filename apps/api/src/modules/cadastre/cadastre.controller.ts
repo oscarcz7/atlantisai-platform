@@ -78,7 +78,7 @@ export class CadastreController {
   @Roles('SUPERADMIN', 'ADMIN')
   @Delete('units/:id')
   deactivateUnit(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
-    return this.cadastreService.deactivateUnit(requireTenant(ctx), id);
+    return this.cadastreService.deleteUnit(requireTenant(ctx), id);
   }
 
   @Roles('SUPERADMIN', 'ADMIN', 'ACCOUNTANT', 'GUARD')
@@ -104,6 +104,12 @@ export class CadastreController {
   }
 
   @Roles('SUPERADMIN', 'ADMIN')
+  @Delete('persons/:id')
+  deletePerson(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+    return this.cadastreService.deletePerson(requireTenant(ctx), id);
+  }
+
+  @Roles('SUPERADMIN', 'ADMIN')
   @Post('occupancies')
   createOccupancy(
     @CurrentTenant() ctx: TenantContext | undefined,
@@ -117,6 +123,12 @@ export class CadastreController {
     },
   ) {
     return this.cadastreService.createOccupancy(requireTenant(ctx), body);
+  }
+
+  @Roles('SUPERADMIN', 'ADMIN')
+  @Delete('occupancies/:id')
+  deleteOccupancy(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+    return this.cadastreService.deleteOccupancy(requireTenant(ctx), id);
   }
 
   @Roles('SUPERADMIN', 'ADMIN')

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import {
   type AuthenticatedStaffUser,
   CurrentUser,
@@ -43,8 +43,12 @@ export class StaffUsersController {
   deactivate(
     @CurrentUser() actor: AuthenticatedStaffUser,
     @Param('id') id: string,
+    @Query('permanent') permanent: string | undefined,
     @Req() req: { ip?: string },
   ) {
+    if (permanent === 'true') {
+      return this.staffUsersService.removePermanently(actor, id, req.ip);
+    }
     return this.staffUsersService.deactivate(actor, id, req.ip);
   }
 }

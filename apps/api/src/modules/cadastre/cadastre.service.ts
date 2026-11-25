@@ -220,15 +220,61 @@ export class CadastreService {
     });
   }
 
-  async deactivateUnit(ctx: TenantContext, unitId: string) {
+  async deleteUnit(ctx: TenantContext, unitId: string) {
     return this.prisma.withTenant(ctx, async (tx) => {
       const existing = await tx.unit.findFirst({ where: { id: unitId, tenantId: ctx.tenantId } });
       if (!existing) {
         throw new DomainError('UNIT_NOT_FOUND', 'Unidad no encontrada.', 404);
       }
-      const updated = await tx.unit.update({ where: { id: unitId }, data: { isActive: false } });
-      await this.recordAudit(tx, ctx, 'UNIT_DEACTIVATED', 'Unit', unitId, existing, updated);
-      return updated;
+      const [reservationsCount, ledgerCount, visitsCount] = await Promise.all([
+        tx.reservation.count({ where: { tenantId: ctx.tenantId, unitId } }),
+        tx.ledgerEntry.count({ where: { tenantId: ctx.tenantId, unitId } }),
+        tx.visit.count({ where: { tenantId: ctx.tenantId, hostUnitId: unitId } }),
+      ]);
+      if (reservationsCount > 0 || ledgerCount > 0 || visitsCount > 0) {
+        const updated = await tx.unit.update({ where: { id: unitId }, data: { isActive: false } });
+        await this.recordAudit(tx, ctx, 'UNIT_DEACTIVATED', 'Unit', unitId, existing, updated);
+        return { deleted: false, deactivated: true, unit: updated };
+      }
+      await tx.occupancy.deleteMany({ where: { tenantId: ctx.tenantId, unitId } });
+      await tx.unit.delete({ where: { id: unitId } });
+      await this.recordAudit(tx, ctx, 'UNIT_DELETED', 'Unit', unitId, existing, null);
+      return { deleted: true, deactivated: false };
+    });
+  }
+
+  async deletePerson(ctx: TenantContext, personId: string) {
+    return this.prisma.withTenant(ctx, async (tx) => {
+      const existing = await tx.person.findFirst({ where: { id: personId, tenantId: ctx.tenantId } });
+      if (!existing) {
+        throw new DomainError('PERSON_NOT_FOUND', 'Persona no encontrada.', 404);
+      }
+      const reservationsCount = await tx.reservation.count({
+        where: { tenantId: ctx.tenantId, personId },
+      });
+      if (reservationsCount > 0) {
+        const updated = await tx.person.update({ where: { id: personId }, data: { isActive: false } });
+        await this.recordAudit(tx, ctx, 'PERSON_DEACTIVATED', 'Person', personId, existing, updated);
+        return { deleted: false, deactivated: true };
+      }
+      await tx.occupancy.deleteMany({ where: { tenantId: ctx.tenantId, personId } });
+      await tx.person.delete({ where: { id: personId } });
+      await this.recordAudit(tx, ctx, 'PERSON_DELETED', 'Person', personId, existing, null);
+      return { deleted: true, deactivated: false };
+    });
+  }
+
+  async deleteOccupancy(ctx: TenantContext, occupancyId: string) {
+    return this.prisma.withTenant(ctx, async (tx) => {
+      const existing = await tx.occupancy.findFirst({
+        where: { id: occupancyId, tenantId: ctx.tenantId },
+      });
+      if (!existing) {
+        throw new DomainError('OCCUPANCY_NOT_FOUND', 'Ocupación no encontrada.', 404);
+      }
+      await tx.occupancy.delete({ where: { id: occupancyId } });
+      await this.recordAudit(tx, ctx, 'OCCUPANCY_DELETED', 'Occupancy', occupancyId, existing, null);
+      return { deleted: true };
     });
   }
 

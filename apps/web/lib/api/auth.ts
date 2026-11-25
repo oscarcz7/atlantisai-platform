@@ -120,4 +120,7 @@ export const authApi = {
 
   deactivateStaffUser: (token: string, id: string) =>
     apiFetch<StaffProfile>(`/staff-users/${id}`, { method: 'DELETE', token }),
+
+  deleteStaffUser: (token: string, id: string) =>
+    apiFetch<{ deleted: boolean }>(`/staff-users/${id}?permanent=true`, { method: 'DELETE', token }),
 };

@@ -555,4 +555,28 @@ export class TenantsService {
       return newTenant;
     });
   }
+
+  async deleteTenant(tenantId: string) {
+    const existing = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!existing) {
+      throw new DomainError('TENANT_NOT_FOUND', 'Edificio no encontrado.', 404);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+      const [reservationsCount, ledgerCount] = await Promise.all([
+        tx.reservation.count({ where: { tenantId } }),
+        tx.ledgerEntry.count({ where: { tenantId } }),
+      ]);
+      if (reservationsCount > 0 || ledgerCount > 0) {
+        throw new DomainError(
+          'TENANT_HAS_HISTORY',
+          `No se puede eliminar "${existing.name}" porque tiene ${reservationsCount} reserva(s) y ${ledgerCount} movimiento(s) contable(s).`,
+          409,
+        );
+      }
+      await tx.tenant.delete({ where: { id: tenantId } });
+      return { deleted: true, id: tenantId };
+    });
+  }
 }
