@@ -42,7 +42,7 @@ export default function LoginPage() {
     } catch (err) {
       if (err instanceof ApiClientError && err.code === 'TOTP_REQUIRED') {
         setNeedsTotp(true);
-        setError(err.message);
+        setError(null);
       } else if (err instanceof ApiClientError) {
         setError(err.message);
       } else {
@@ -114,18 +114,22 @@ export default function LoginPage() {
                 inputMode="numeric"
                 maxLength={6}
                 required
+                autoFocus
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value)}
                 placeholder="000000"
                 style={{
                   padding: '11px 13px',
                   borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--color-border)',
+                  border: '1px solid var(--color-primary)',
                   backgroundColor: 'var(--color-bg)',
                   color: 'var(--color-text)',
                   letterSpacing: '4px',
                 }}
               />
+              <span style={{ fontSize: '12px', fontWeight: 400, color: 'var(--color-text-muted)' }}>
+                Credenciales verificadas. Ingresa el código de tu aplicación autenticadora para entrar.
+              </span>
             </label>
           )}
 
