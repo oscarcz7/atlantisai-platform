@@ -167,7 +167,13 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div style={{ marginTop: '18px', fontSize: '13px', textAlign: 'center' }}>
+        <div style={{ marginTop: '18px', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <a
+            href={process.env['NEXT_PUBLIC_SITE_URL'] ?? 'http://localhost:3001'}
+            style={{ color: 'var(--color-text-muted)', textDecoration: 'none', fontWeight: 500 }}
+          >
+            ← Volver al sitio
+          </a>
           <Link href="/forgot-password" style={{ color: 'var(--color-primary)', textDecoration: 'none', fontWeight: 500 }}>
             ¿Olvidaste tu contraseña?
           </Link>
