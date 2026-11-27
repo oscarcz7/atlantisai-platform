@@ -1,9 +1,12 @@
+import { isIP } from 'node:net';
 import type {
   AccessControlDevice,
   CredentialUpsertPayload,
   DeviceStatus,
+  StatusOptions,
 } from './device.interface.js';
-import { digestFetch, type DigestCredentials } from './digest-fetch.js';
+import { DigestClient, type DigestCredentials, type FetchLike } from './digest-fetch.js';
+import { createPinnedTlsFetch, hasPinnedTls, type ReaderTlsOptions } from './reader-transport.js';
 
 export interface HikvisionDeviceConfig {
   protocol: 'http' | 'https';
@@ -12,6 +15,22 @@ export interface HikvisionDeviceConfig {
   credentials: DigestCredentials;
   timezone?: string;
   employeePrefix?: string;
+  /** Per-request timeout for ISAPI calls (default 10 s). */
+  timeoutMs?: number;
+  /** Pinned CA / certificate fingerprint for https readers with self-signed certs. */
+  tls?: ReaderTlsOptions;
+  /** Test hook / custom transport. */
+  fetchImpl?: FetchLike;
+}
+
+/** Describes a network error without leaking credentials (undici puts the real cause in err.cause). */
+export function describeError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  if (err.name === 'TimeoutError' || err.name === 'AbortError') return 'timeout';
+  const cause = (err as Error & { cause?: { code?: string; message?: string } }).cause;
+  if (cause?.code) return `${err.message} (${cause.code})`;
+  if (cause?.message) return `${err.message} (${cause.message})`;
+  return err.message;
 }
 
 /**
@@ -42,11 +61,29 @@ export class HikvisionIsapiDevice implements AccessControlDevice {
   private readonly baseUrl: string;
   private readonly timezone: string;
   private readonly prefix: string;
+  private readonly client: DigestClient;
 
   constructor(private readonly config: HikvisionDeviceConfig) {
-    this.baseUrl = `${config.protocol}://${config.ip}:${config.port}`;
+    const host = isIP(config.ip) === 6 ? `[${config.ip}]` : config.ip;
+    this.baseUrl = `${config.protocol}://${host}:${config.port}`;
     this.timezone = config.timezone ?? 'America/Guayaquil';
     this.prefix = (config.employeePrefix ?? 'NX').toUpperCase();
+    const fetchImpl =
+      config.fetchImpl ??
+      (config.protocol === 'https' && hasPinnedTls(config.tls)
+        ? createPinnedTlsFetch(config.tls)
+        : undefined);
+    this.client = new DigestClient(config.credentials, {
+      timeoutMs: config.timeoutMs ?? 10_000,
+      ...(fetchImpl ? { fetchImpl } : {}),
+    });
+  }
+
+  private request(
+    path: string,
+    init: { method?: string; headers?: Record<string, string>; body?: string } = {},
+  ) {
+    return this.client.request(`${this.baseUrl}${path}`, init);
   }
 
   private assertPrefix(employeeNo: string): void {
@@ -57,37 +94,34 @@ export class HikvisionIsapiDevice implements AccessControlDevice {
     }
   }
 
-  async getStatus(): Promise<DeviceStatus> {
+  async getStatus(opts: StatusOptions = {}): Promise<DeviceStatus> {
     try {
-      const infoRes = await digestFetch(
-        `${this.baseUrl}/ISAPI/System/deviceInfo`,
-        { method: 'GET' },
-        this.config.credentials,
-      );
+      const infoRes = await this.request('/ISAPI/System/deviceInfo', { method: 'GET' });
       if (!infoRes.ok) {
-        return { online: false };
+        await infoRes.body?.cancel().catch(() => undefined);
+        return { online: false, error: `ISAPI deviceInfo HTTP ${infoRes.status}` };
       }
       const xml = await infoRes.text();
       const fwMatch = xml.match(/<firmwareVersion>([^<]+)<\/firmwareVersion>/i);
 
       let userCount: number | undefined;
-      try {
-        const countRes = await digestFetch(
-          `${this.baseUrl}/ISAPI/AccessControl/UserInfo/Count?format=json`,
-          { method: 'GET' },
-          this.config.credentials,
-        );
-        if (countRes.ok) {
-          const json = (await countRes.json()) as { UserInfoCount?: { userNumber?: number } };
-          userCount = json.UserInfoCount?.userNumber;
+      if (opts.detailed) {
+        try {
+          const countRes = await this.request('/ISAPI/AccessControl/UserInfo/Count?format=json', {
+            method: 'GET',
+          });
+          if (countRes.ok) {
+            const json = (await countRes.json()) as { UserInfoCount?: { userNumber?: number } };
+            userCount = json.UserInfoCount?.userNumber;
+          }
+        } catch {
+          // Optional counter
         }
-      } catch {
-        // Optional counter
       }
 
-      return { online: true, firmware: fwMatch?.[1], userCount };
-    } catch {
-      return { online: false };
+      return { online: true, firmware: fwMatch?.[1]?.slice(0, 128), userCount };
+    } catch (err) {
+      return { online: false, error: describeError(err) };
     }
   }
 
@@ -112,30 +146,24 @@ export class HikvisionIsapiDevice implements AccessControlDevice {
       },
     };
 
-    const userRes = await digestFetch(
-      `${this.baseUrl}/ISAPI/AccessControl/UserInfo/SetUp?format=json`,
-      {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userPayload),
-      },
-      this.config.credentials,
-    );
+    const userRes = await this.request(`/ISAPI/AccessControl/UserInfo/SetUp?format=json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(userPayload),
+    });
 
     if (!userRes.ok) {
       // Fallback to POST /UserInfo/Record on firmwares that do not support PUT /SetUp
-      const fallbackRes = await digestFetch(
-        `${this.baseUrl}/ISAPI/AccessControl/UserInfo/Record?format=json`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(userPayload),
-        },
-        this.config.credentials,
-      );
+      const fallbackRes = await this.request(`/ISAPI/AccessControl/UserInfo/Record?format=json`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userPayload),
+      });
       if (!fallbackRes.ok) {
         const errBody = await fallbackRes.text().catch(() => '');
-        throw new Error(`Hikvision UserInfo failed (${fallbackRes.status}): ${errBody.slice(0, 300)}`);
+        throw new Error(
+          `Hikvision UserInfo failed (${fallbackRes.status}): ${errBody.slice(0, 300)}`,
+        );
       }
     }
 
@@ -149,15 +177,11 @@ export class HikvisionIsapiDevice implements AccessControlDevice {
       },
     };
 
-    const cardRes = await digestFetch(
-      `${this.baseUrl}/ISAPI/AccessControl/CardInfo/Record?format=json`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cardPayload),
-      },
-      this.config.credentials,
-    );
+    const cardRes = await this.request(`/ISAPI/AccessControl/CardInfo/Record?format=json`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cardPayload),
+    });
 
     if (!cardRes.ok) {
       const errBody = await cardRes.text().catch(() => '');
@@ -171,20 +195,16 @@ export class HikvisionIsapiDevice implements AccessControlDevice {
   async revokeCredential(employeeNo: string): Promise<void> {
     this.assertPrefix(employeeNo);
 
-    const res = await digestFetch(
-      `${this.baseUrl}/ISAPI/AccessControl/UserInfoDetail/Delete?format=json`,
-      {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          UserInfoDetail: {
-            mode: 'byEmployeeNo',
-            EmployeeNoList: [{ employeeNo }],
-          },
-        }),
-      },
-      this.config.credentials,
-    );
+    const res = await this.request(`/ISAPI/AccessControl/UserInfoDetail/Delete?format=json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        UserInfoDetail: {
+          mode: 'byEmployeeNo',
+          EmployeeNoList: [{ employeeNo }],
+        },
+      }),
+    });
 
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
@@ -193,15 +213,11 @@ export class HikvisionIsapiDevice implements AccessControlDevice {
   }
 
   async openDoor(doorNo = 1): Promise<void> {
-    const res = await digestFetch(
-      `${this.baseUrl}/ISAPI/AccessControl/RemoteControl/door/${doorNo}`,
-      {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/xml' },
-        body: '<RemoteControlDoor><cmd>open</cmd></RemoteControlDoor>',
-      },
-      this.config.credentials,
-    );
+    const res = await this.request(`/ISAPI/AccessControl/RemoteControl/door/${doorNo}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/xml' },
+      body: '<RemoteControlDoor><cmd>open</cmd></RemoteControlDoor>',
+    });
 
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');

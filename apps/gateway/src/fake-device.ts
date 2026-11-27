@@ -8,6 +8,8 @@ export class FakeDevice implements AccessControlDevice {
   private readonly credentials = new Map<string, CredentialUpsertPayload>();
   private readonly prefix: string;
   public readonly openedDoors: number[] = [];
+  /** Test hook: simulate an unreachable reader. */
+  public online = true;
 
   constructor(
     private readonly readerCode: string,
@@ -44,6 +46,9 @@ export class FakeDevice implements AccessControlDevice {
   }
 
   async getStatus(): Promise<DeviceStatus> {
+    if (!this.online) {
+      return { online: false, error: 'simulated offline' };
+    }
     return {
       online: true,
       firmware: 'FAKE-POC-1.0',
