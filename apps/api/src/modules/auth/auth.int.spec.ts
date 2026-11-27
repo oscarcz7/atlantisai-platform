@@ -29,6 +29,7 @@ describe('Auth & StaffUsers integration (Spec 002)', () => {
   };
   const testEmail = `admin-${tenantAId.slice(0, 8)}@noah.test`;
   const expiredInviteEmail = `expired-${tenantAId.slice(0, 8)}@noah.test`;
+  const hardenEmail = `harden-${tenantAId.slice(0, 8)}@noah.test`;
 
   beforeAll(async () => {
     await prisma.$connect();
@@ -42,7 +43,7 @@ describe('Auth & StaffUsers integration (Spec 002)', () => {
 
   afterAll(async () => {
     await prisma.staffUser.deleteMany({
-      where: { email: { in: [testEmail, expiredInviteEmail] } },
+      where: { email: { in: [testEmail, expiredInviteEmail, hardenEmail] } },
     });
     await prisma.tenant.deleteMany({
       where: { id: { in: [tenantAId, tenantBId] } },
@@ -135,6 +136,64 @@ describe('Auth & StaffUsers integration (Spec 002)', () => {
         { email: testEmail, password: 'StrongPass123!', totpCode: codeAtT1 },
         {},
         new Date(after31Min.getTime() + 5 * 60 * 1000),
+      ),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_LOCKED' });
+  });
+
+  it('rejects TOTP replay, blocks 2FA re-enrolment and locks after repeated wrong second factors', async () => {
+    const t0 = new Date('2026-11-24T12:00:00Z');
+    const invited = await staffUsersService.invite(
+      superAdminActor,
+      { email: hardenEmail, fullName: 'Harden Test', role: 'ADMIN', tenantIds: [tenantAId] },
+      '127.0.0.1',
+      t0,
+    );
+    const inviteToken = mailer.sent[mailer.sent.length - 1]!.token!;
+    await authService.acceptInvite(inviteToken, 'StrongPass123!', {}, t0);
+    const setup = await authService.setupTotp(invited.id);
+    const confirmed = await authService.confirmTotp(invited.id, totp.generateCode(setup.secret, t0.getTime()), {}, t0);
+
+    // Re-enrolment with a full session is refused (stolen token cannot swap the 2nd factor)
+    await expect(authService.setupTotp(invited.id)).rejects.toMatchObject({ code: 'TOTP_ALREADY_ENABLED' });
+
+    // The code used to confirm cannot be replayed to log in within its window
+    const t1 = new Date(t0.getTime() + 10_000);
+    const sameStepCode = totp.generateCode(setup.secret, t0.getTime());
+    await expect(
+      authService.login({ email: hardenEmail, password: 'StrongPass123!', totpCode: sameStepCode }, {}, t1),
+    ).rejects.toMatchObject({ code: 'INVALID_TOTP' });
+
+    // A fresh time step works once, then its replay fails
+    const t2 = new Date(t0.getTime() + 60_000);
+    const freshCode = totp.generateCode(setup.secret, t2.getTime());
+    const ok = await authService.login({ email: hardenEmail, password: 'StrongPass123!', totpCode: freshCode }, {}, t2);
+    expect(ok.tokens?.accessToken).toBeTruthy();
+    await expect(
+      authService.login({ email: hardenEmail, password: 'StrongPass123!', totpCode: freshCode }, {}, t2),
+    ).rejects.toMatchObject({ code: 'INVALID_TOTP' });
+
+    // Recovery code is single use
+    const recovery = confirmed.recoveryCodes[0]!;
+    const t3 = new Date(t0.getTime() + 120_000);
+    await expect(
+      authService.login({ email: hardenEmail, password: 'StrongPass123!', recoveryCode: recovery }, {}, t3),
+    ).resolves.toHaveProperty('tokens');
+
+    // Wrong second factors with the right password lock the account (brute-force guard).
+    // One failure already counted from the replay above (#2 after success resets). Count from success:
+    const t4 = new Date(t0.getTime() + 180_000);
+    let lastError: unknown;
+    for (let i = 0; i < 5; i++) {
+      lastError = await authService
+        .login({ email: hardenEmail, password: 'StrongPass123!', recoveryCode: recovery }, {}, t4)
+        .catch((e: unknown) => e);
+    }
+    expect(lastError).toMatchObject({ code: 'ACCOUNT_LOCKED', statusCode: 423 });
+    await expect(
+      authService.login(
+        { email: hardenEmail, password: 'StrongPass123!', totpCode: totp.generateCode(setup.secret, t4.getTime() + 30_000) },
+        {},
+        new Date(t4.getTime() + 30_000),
       ),
     ).rejects.toMatchObject({ code: 'ACCOUNT_LOCKED' });
   });

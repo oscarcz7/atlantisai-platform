@@ -20,10 +20,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   async withTenant<T>(
     ctx: TenantContext,
     fn: (tx: Prisma.TransactionClient) => Promise<T>,
+    options?: { timeout?: number; maxWait?: number },
   ): Promise<T> {
     return this.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.tenant_id', ${ctx.tenantId}, true)`;
       return fn(tx);
-    });
+    }, options);
   }
 }

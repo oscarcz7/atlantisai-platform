@@ -9,6 +9,8 @@ import {
   signPassToken,
   verifyPassToken,
 } from './pass-token.js';
+import { generateGatewayToken, hashGatewayToken, matchesLegacyGatewayToken } from './gateway-auth.js';
+import { assertAmenitiesInTenant } from '../../common/prisma/tenant-refs.js';
 
 export interface UpsertReaderInput {
   id?: string;
@@ -86,6 +88,56 @@ export class AccessService {
       throw new DomainError('TENANT_NOT_FOUND', 'Edificio no encontrado para el gateway.', 404);
     }
     return tenant.id;
+  }
+
+  /**
+   * Authenticates an Edge Gateway and returns the tenant it belongs to.
+   * The tenant is derived from the per-tenant token; the client-supplied hint is only
+   * used by the legacy shared dev token (disabled in production).
+   */
+  async resolveGatewayTenant(token: string | undefined, tenantHint?: string): Promise<string> {
+    const invalid = () =>
+      new DomainError('INVALID_GATEWAY_TOKEN', 'Token de Edge Gateway inválido.', 401);
+    if (!token) throw invalid();
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { gatewayTokenHash: hashGatewayToken(token) },
+      select: { id: true },
+    });
+    if (tenant) return tenant.id;
+
+    if (matchesLegacyGatewayToken(token)) {
+      if (!tenantHint) {
+        throw new DomainError('TENANT_REQUIRED', 'Falta x-tenant-id o ?tenant=', 400);
+      }
+      return this.resolveTenantId(tenantHint);
+    }
+    throw invalid();
+  }
+
+  /** Issues a new gateway token for the tenant (plaintext returned once) and revokes the old one. */
+  async rotateGatewayToken(ctx: TenantContext, now: Date = new Date()) {
+    const token = generateGatewayToken();
+    await this.prisma.withTenant(ctx, async (tx) => {
+      await tx.tenant.update({
+        where: { id: ctx.tenantId },
+        data: { gatewayTokenHash: hashGatewayToken(token), gatewayTokenRotatedAt: now },
+      });
+      await tx.auditLog.create({
+        data: {
+          id: generateUuidV7(now.getTime()),
+          tenantId: ctx.tenantId,
+          actorType: ctx.actorType,
+          actorId: ctx.actorId,
+          action: 'GATEWAY_TOKEN_ROTATED',
+          entity: 'Tenant',
+          entityId: ctx.tenantId,
+          channel: ctx.channel,
+          after: { rotatedAt: now.toISOString() },
+        },
+      });
+    });
+    return { token, rotatedAt: now.toISOString() };
   }
 
   /**
@@ -673,6 +725,7 @@ export class AccessService {
     }
 
     return this.prisma.withTenant(ctx, async (tx) => {
+      await assertAmenitiesInTenant(tx, ctx.tenantId, input.amenityIds ?? []);
       const code = input.code.trim().toUpperCase();
       const existing = input.id
         ? await tx.reader.findFirst({ where: { id: input.id, tenantId: ctx.tenantId } })

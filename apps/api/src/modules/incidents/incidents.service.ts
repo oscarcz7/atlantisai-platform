@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DomainError, generateUuidV7, type TenantContext } from '@noah/domain';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
+import { assertPersonInTenant, assertTicketInTenant } from '../../common/prisma/tenant-refs.js';
 
 @Injectable()
 export class IncidentsService {
@@ -107,8 +108,10 @@ export class IncidentsService {
   }
 
   async subscribe(ctx: TenantContext, ticketId: string, personId: string) {
-    return this.prisma.withTenant(ctx, async (tx) =>
-      tx.ticketSubscriber.upsert({
+    return this.prisma.withTenant(ctx, async (tx) => {
+      await assertTicketInTenant(tx, ctx.tenantId, ticketId);
+      await assertPersonInTenant(tx, ctx.tenantId, personId);
+      return tx.ticketSubscriber.upsert({
         where: { ticketId_personId: { ticketId, personId } },
         update: {},
         create: {
@@ -117,8 +120,8 @@ export class IncidentsService {
           ticketId,
           personId,
         },
-      }),
-    );
+      });
+    });
   }
 
   async remove(ctx: TenantContext, ticketId: string) {

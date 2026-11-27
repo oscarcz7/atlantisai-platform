@@ -171,6 +171,23 @@ describe('Phase 1 E2E Modules Integration (Specs 007–011)', () => {
     );
     expect(comboRes.status).toBe('PENDING_PAYMENT');
 
+    // 4a. Underpayment (USD 1,00) is recorded but does NOT confirm the reservation
+    const underProof = await billingService.submitPaymentProof(ctx, {
+      unitId,
+      reservationId: comboRes.id,
+      fileKey: 'proofs/under.jpg',
+      bank: 'Produbanco',
+      amountCents: 100,
+      transferDate: '2026-11-23T10:30:00Z',
+      reference: 'TRF-UNDER-1',
+    });
+    const underApproved = await billingService.approvePaymentProof(ctx, underProof.proof.id, now);
+    expect(underApproved.receipt.receiptCode).toBe('REC-000002');
+    expect(underApproved.reservationConfirmed).toBe(false);
+    expect(underApproved.outstandingCents).toBeGreaterThan(0);
+    const calendarUnder = await reservationsService.listCalendar(ctx);
+    expect(calendarUnder.find((r) => r.id === comboRes.id)?.status).not.toBe('CONFIRMED');
+
     const comboProof = await billingService.submitPaymentProof(ctx, {
       unitId,
       reservationId: comboRes.id,
@@ -181,11 +198,36 @@ describe('Phase 1 E2E Modules Integration (Specs 007–011)', () => {
       reference: 'TRF-COMBO-50',
     });
     const comboApproved = await billingService.approvePaymentProof(ctx, comboProof.proof.id, now);
-    expect(comboApproved.receipt.receiptCode).toBe('REC-000002');
+    expect(comboApproved.receipt.receiptCode).toBe('REC-000003');
+    expect(comboApproved.reservationConfirmed).toBe(true);
 
     const calendar = await reservationsService.listCalendar(ctx);
     const updatedRes = calendar.find((r) => r.id === comboRes.id);
     expect(updatedRes?.status).toBe('CONFIRMED');
+
+    // 4b. Reviewed proofs are immutable: no second approval, no rejecting an approved proof
+    await expect(billingService.approvePaymentProof(ctx, comboProof.proof.id, now)).rejects.toMatchObject({
+      code: 'PAYMENT_PROOF_ALREADY_REVIEWED',
+    });
+    await expect(
+      billingService.rejectPaymentProof(ctx, comboProof.proof.id, 'Error', now),
+    ).rejects.toMatchObject({ code: 'PAYMENT_PROOF_ALREADY_REVIEWED' });
+
+    // 4d. Deposit deductions cannot exceed the balance (no silent clamp)
+    await expect(
+      billingService.recordDepositMovement(ctx, {
+        unitId,
+        type: 'DEDUCTION',
+        amountCents: 999_999,
+        reason: 'Exceso',
+      }),
+    ).rejects.toMatchObject({ code: 'DEPOSIT_INSUFFICIENT_BALANCE' });
+
+    // 4e. Cancellation is a one-way transition
+    await reservationsService.cancel(ctx, comboRes.id, 'Prueba de cancelación', now);
+    await expect(reservationsService.cancel(ctx, comboRes.id, 'Otra vez', now)).rejects.toMatchObject({
+      code: 'RESERVATION_NOT_CANCELLABLE',
+    });
 
     // 5. Visits & parking overtime (4h30m -> 2h overtime -> USD 3,00 ledger charge)
     const visit = await visitsService.registerVisit(ctx, {
@@ -202,6 +244,13 @@ describe('Phase 1 E2E Modules Integration (Specs 007–011)', () => {
     const checkOutTime = new Date(now.getTime() + 270 * 60_000); // 4h 30m
     const checkedOut = await visitsService.checkOut(ctx, visit.id, checkOutTime);
     expect(checkedOut.overtimeCents).toBe(300);
+    // Repeated check-in/out are rejected (no timer reset, no double overtime charge)
+    await expect(visitsService.checkOut(ctx, visit.id, checkOutTime)).rejects.toMatchObject({
+      code: 'VISIT_ALREADY_CHECKED_OUT',
+    });
+    await expect(visitsService.checkIn(ctx, visit.id, undefined, checkOutTime)).rejects.toMatchObject({
+      code: 'VISIT_ALREADY_CHECKED_IN',
+    });
 
     // 6. Incidents 48h duplicate detection + subscriber
     const t1 = await incidentsService.create(

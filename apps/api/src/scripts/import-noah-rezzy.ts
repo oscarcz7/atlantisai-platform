@@ -266,7 +266,7 @@ async function main() {
               tenantId: ctx.tenantId,
               fullName: p.fullName,
               nationalIdEnc: encryption.encrypt(cleanId),
-              nationalIdHash: encryption.hashToken(cleanId.toUpperCase()),
+              nationalIdHash: encryption.hashNationalId(cleanId),
               nationalIdMask: maskNationalId(cleanId),
               waPhone: p.normalizedPhone,
               email: p.email ?? null,

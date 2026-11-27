@@ -57,9 +57,12 @@ describe('Building Configurator & Seed integration (Spec 003)', () => {
       catalogService.getParkingConfig(ctx),
     ]);
 
-    expect(unitTypes).toHaveLength(3);
-    expect(amenities).toHaveLength(11);
-    expect(combos).toHaveLength(4);
+    const seedCfg = JSON.parse(
+      readFileSync(resolve(process.cwd(), '../../seed/noah.config.json'), 'utf8'),
+    ) as { unitTypes: unknown[]; amenities: unknown[]; cleaningCombos: unknown[] };
+    expect(unitTypes).toHaveLength(seedCfg.unitTypes.length);
+    expect(amenities).toHaveLength(seedCfg.amenities.length);
+    expect(combos).toHaveLength(seedCfg.cleaningCombos.length);
     expect(parking?.spots).toBe(4);
 
     // 2. Combo validation: reject amenity without cleaning fee
@@ -90,8 +93,8 @@ describe('Building Configurator & Seed integration (Spec 003)', () => {
       catalogService.listCleaningCombos(cloneCtx),
     ]);
 
-    expect(clonedAmenities).toHaveLength(11);
-    expect(clonedCombos).toHaveLength(4);
+    expect(clonedAmenities).toHaveLength(amenities.length);
+    expect(clonedCombos).toHaveLength(combos.length);
     // Verify cloned IDs are completely distinct from source IDs
     expect(clonedAmenities[0]?.id).not.toBe(amenities[0]?.id);
   });

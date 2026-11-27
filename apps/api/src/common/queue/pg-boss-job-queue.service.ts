@@ -53,6 +53,14 @@ export class PgBossJobQueue implements JobQueue, OnModuleInit, OnModuleDestroy {
     return this.boss.send(queueName, payload);
   }
 
+  async schedule(queueName: string, cron: string, payload: JobPayload = {}): Promise<void> {
+    if (!this.boss) {
+      return;
+    }
+    await this.boss.createQueue(queueName);
+    await this.boss.schedule(queueName, cron, payload, { tz: 'UTC' });
+  }
+
   async work<T extends JobPayload>(queueName: string, handler: JobHandler<T>): Promise<void> {
     if (!this.boss) {
       return;

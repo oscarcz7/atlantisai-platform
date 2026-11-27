@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, randomBytes } from 'node:crypto';
 
 const ALGORITHM = 'aes-256-gcm';
 const DEV_FALLBACK_KEY = createHash('sha256').update('noah-local-dev-encryption-key').digest();
@@ -7,6 +7,7 @@ const DEV_FALLBACK_KEY = createHash('sha256').update('noah-local-dev-encryption-
 @Injectable()
 export class FieldEncryptionService {
   private readonly key: Buffer;
+  private readonly nationalIdKey: Buffer;
 
   constructor() {
     const rawKey = process.env['FIELD_ENCRYPTION_KEY'];
@@ -21,6 +22,30 @@ export class FieldEncryptionService {
     } else {
       this.key = DEV_FALLBACK_KEY;
     }
+    // Dedicated HMAC key for national IDs. NATIONAL_ID_HMAC_KEY (base64, >=32 bytes) when set;
+    // otherwise derived from the encryption key with HKDF and a distinct label, so it is never
+    // stored with the data and never equals the encryption key itself.
+    const hmacRaw = process.env['NATIONAL_ID_HMAC_KEY']?.trim();
+    if (hmacRaw) {
+      const decoded = Buffer.from(hmacRaw, 'base64');
+      if (decoded.length < 32) {
+        throw new Error('NATIONAL_ID_HMAC_KEY must decode to at least 32 bytes (base64)');
+      }
+      this.nationalIdKey = decoded;
+    } else {
+      this.nationalIdKey = Buffer.from(
+        hkdfSync('sha256', this.key, Buffer.alloc(0), 'noah:national-id-hmac:v1', 32),
+      );
+    }
+  }
+
+  /**
+   * Keyed hash for national IDs (cédula). A plain SHA-256 over ~10^9 possible IDs can be
+   * brute-forced in seconds from a DB dump; an HMAC with a secret key cannot.
+   * Normalised (trim + upper-case) so the same ID always yields the same hash.
+   */
+  hashNationalId(value: string): string {
+    return createHmac('sha256', this.nationalIdKey).update(value.trim().toUpperCase(), 'utf8').digest('hex');
   }
 
   encrypt(plaintext: string): string {

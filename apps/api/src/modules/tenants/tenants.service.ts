@@ -211,7 +211,12 @@ export class TenantsService {
       bankAccounts?: Array<Record<string, unknown>>;
       adminUserIds?: string[];
     },
+    actorId = 'system',
   ) {
+    const before = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!before) {
+      throw new DomainError('TENANT_NOT_FOUND', 'Edificio no encontrado.', 404);
+    }
     const updated = await this.prisma.tenant.update({
       where: { id: tenantId },
       data: {
@@ -231,6 +236,37 @@ export class TenantsService {
 
     if (input.adminUserIds !== undefined) {
       await this.syncBuildingAdmins(tenantId, input.adminUserIds);
+    }
+
+    // Constitution VII: building config changes — especially the bank accounts residents pay
+    // into — must leave a before/after trail.
+    const fields = ['name', 'ruc', 'logoUrl', 'timezone', 'contacts', 'officeHours', 'bankAccounts'] as const;
+    const changed = fields.filter(
+      (f) => input[f] !== undefined && JSON.stringify(before[f]) !== JSON.stringify(updated[f]),
+    );
+    if (changed.length > 0 || input.adminUserIds !== undefined) {
+      const pick = (t: typeof before) => Object.fromEntries(changed.map((f) => [f, t[f]]));
+      await this.prisma.withTenant(
+        { tenantId, actorType: 'STAFF', actorId, channel: 'DASHBOARD' },
+        (tx) =>
+          tx.auditLog.create({
+            data: {
+              id: generateUuidV7(),
+              tenantId,
+              actorType: 'STAFF',
+              actorId,
+              action: changed.includes('bankAccounts') ? 'TENANT_BANK_ACCOUNTS_UPDATED' : 'TENANT_UPDATED',
+              entity: 'Tenant',
+              entityId: tenantId,
+              channel: 'DASHBOARD',
+              before: pick(before) as Prisma.InputJsonValue,
+              after: {
+                ...pick(updated),
+                ...(input.adminUserIds !== undefined ? { adminUserIds: input.adminUserIds } : {}),
+              } as Prisma.InputJsonValue,
+            },
+          }),
+      );
     }
 
     return updated;
@@ -616,7 +652,7 @@ export class TenantsService {
     });
   }
 
-  async deleteTenant(tenantId: string) {
+  async deleteTenant(tenantId: string, actorId = 'system') {
     const existing = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!existing) {
       throw new DomainError('TENANT_NOT_FOUND', 'Edificio no encontrado.', 404);
@@ -635,6 +671,20 @@ export class TenantsService {
           409,
         );
       }
+      // The audit trail has no FK to tenants, so this record outlives the tenant.
+      await tx.auditLog.create({
+        data: {
+          id: generateUuidV7(),
+          tenantId,
+          actorType: 'STAFF',
+          actorId,
+          action: 'TENANT_DELETED',
+          entity: 'Tenant',
+          entityId: tenantId,
+          channel: 'DASHBOARD',
+          before: { code: existing.code, name: existing.name, ruc: existing.ruc },
+        },
+      });
       await tx.tenant.delete({ where: { id: tenantId } });
       return { deleted: true, id: tenantId };
     });

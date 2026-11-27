@@ -15,6 +15,9 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { AccessService } from '../access/access.service.js';
+import { assertAmenitiesInTenant } from '../../common/prisma/tenant-refs.js';
+import { computeArrearsMonths, reservationLedgerRef } from '../billing/arrears.js';
+import { chargeCents, syncExtraGuestCharge } from '../billing/reservation-ledger.js';
 
 export interface CreateReservationInput {
   unitId: string;
@@ -40,6 +43,21 @@ export interface CreateAdminBlockInput {
   startsAt: string;
   endsAt: string;
   reason: string;
+}
+
+/** Local day keys covered by [startsAt, endsAt) — usually one, two when crossing midnight. */
+function touchedDayKeys(startsAt: string, endsAt: string, timezone: string, startKey?: string): string[] {
+  const start = new Date(startsAt);
+  const end = new Date(endsAt);
+  const keys = new Set<string>([startKey ?? getLocalDateParts(start, timezone).dayKey]);
+  if (!Number.isNaN(end.getTime()) && end > start) {
+    // Walk day by day (bounded: reservations are hours long; cap at 7 days defensively).
+    for (let t = start.getTime() + 86_400_000, i = 0; t < end.getTime() && i < 7; t += 86_400_000, i++) {
+      keys.add(getLocalDateParts(new Date(t), timezone).dayKey);
+    }
+    keys.add(getLocalDateParts(new Date(end.getTime() - 1), timezone).dayKey);
+  }
+  return Array.from(keys).sort();
 }
 
 @Injectable()
@@ -116,21 +134,8 @@ export class ReservationsService {
       cleaningFeeCents: a.cleaningFeeCents,
     }));
 
-    // Compute real overdue monthly fee months (R04) and real deposit balance (R05)
-    const overdueFees = ledgerEntries
-      .filter((e) => e.type === 'MONTHLY_FEE' && e.amountCents > 0 && e.dueDate && e.dueDate < now)
-      .sort((a, b) => (a.dueDate?.getTime() ?? 0) - (b.dueDate?.getTime() ?? 0));
-    let totalPaid = ledgerEntries
-      .filter((e) => e.amountCents < 0)
-      .reduce((sum, e) => sum + Math.abs(e.amountCents), 0);
-    let arrearsMonths = 0;
-    for (const fee of overdueFees) {
-      if (totalPaid >= fee.amountCents) {
-        totalPaid -= fee.amountCents;
-      } else {
-        arrearsMonths++;
-      }
-    }
+    // R04 arrears (reservation-tagged entries are netted per reservation) and R05 deposit
+    const arrearsMonths = computeArrearsMonths(ledgerEntries, now);
 
     return {
       now,
@@ -222,9 +227,15 @@ export class ReservationsService {
         tenant?.timezone ?? 'America/Guayaquil',
       ).dayKey;
       const sortedAmenityIds = Array.from(new Set(input.amenityIds)).sort();
+      // Lock order (deadlock-free): unit first (R08 frequency quotas are per unit and span
+      // weeks/months), then every (amenity, local day) the booking touches (midnight crossing).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${ctx.tenantId}:unit:${input.unitId}`}))`;
+      const dayKeys = touchedDayKeys(input.startsAt, input.endsAt, tenant?.timezone ?? 'America/Guayaquil', dayKey);
       for (const amenityId of sortedAmenityIds) {
-        const lockKey = `${ctx.tenantId}:${amenityId}:${dayKey}`;
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+        for (const dk of dayKeys) {
+          const lockKey = `${ctx.tenantId}:${amenityId}:${dk}`;
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+        }
       }
 
       // Re-evaluate rules strictly INSIDE the lock
@@ -303,6 +314,15 @@ export class ReservationsService {
         },
       });
 
+      // P-12: extra guests go to the unit account as a pending charge (reservation still issued).
+      await syncExtraGuestCharge(tx, {
+        tenantId: ctx.tenantId,
+        unitId: input.unitId,
+        reservationId: created.id,
+        targetCents: chargeCents(result.charges, 'EXTRA_GUEST'),
+        now,
+      });
+
       if (created.status === 'CONFIRMED' && this.accessService) {
         await this.accessService.issueCredentialForReservationInTx(tx, ctx, created.id, now);
       }
@@ -348,6 +368,7 @@ export class ReservationsService {
     }
 
     return this.prisma.withTenant(ctx, async (tx) => {
+      await assertAmenitiesInTenant(tx, ctx.tenantId, input.amenityIds);
       const id = generateUuidV7(now.getTime());
       const block = await tx.reservation.create({
         data: {
@@ -399,11 +420,63 @@ export class ReservationsService {
       if (!existing) {
         throw new DomainError('RESERVATION_NOT_FOUND', 'Reserva no encontrada.', 404);
       }
+      const CANCELLABLE = ['PENDING_PAYMENT', 'IN_REVIEW', 'CONFIRMED', 'ADMIN_BLOCK'] as const;
+      if (!(CANCELLABLE as readonly string[]).includes(existing.status)) {
+        throw new DomainError(
+          'RESERVATION_NOT_CANCELLABLE',
+          'Esta reserva ya no se puede cancelar (cancelada, expirada o completada).',
+          422,
+        );
+      }
+      if (existing.status !== 'ADMIN_BLOCK' && existing.endsAt <= now) {
+        throw new DomainError('RESERVATION_ALREADY_PAST', 'No se puede cancelar una reserva que ya ocurrió.', 422);
+      }
 
-      const updated = await tx.reservation.update({
-        where: { id: reservationId },
+      // Cancellation policy (minHoursBefore). Residents (WhatsApp/AI) must respect it;
+      // ADMIN/SUPERADMIN may override it — the mandatory reason + audit flag record the exception.
+      let outsidePolicy = false;
+      if (existing.status !== 'ADMIN_BLOCK') {
+        const settings = await tx.tenantSettings.findUnique({
+          where: { tenantId: ctx.tenantId },
+          select: { cancellationPolicy: true },
+        });
+        const policy = settings?.cancellationPolicy as { minHoursBefore?: unknown } | null | undefined;
+        const minHours = typeof policy?.minHoursBefore === 'number' ? policy.minHoursBefore : 0;
+        const hoursLeft = (existing.startsAt.getTime() - now.getTime()) / 3_600_000;
+        if (minHours > 0 && hoursLeft < minHours) {
+          const staffOverride =
+            ctx.actorType === 'STAFF' && (ctx.role === 'ADMIN' || ctx.role === 'SUPERADMIN');
+          if (!staffOverride) {
+            throw new DomainError(
+              'CANCELLATION_TOO_LATE',
+              `Las reservas solo pueden cancelarse con al menos ${minHours} horas de anticipación.`,
+              422,
+              { minHoursBefore: minHours },
+            );
+          }
+          outsidePolicy = true;
+        }
+      }
+
+      // Atomic transition: concurrent cancellations cannot both apply.
+      const claimed = await tx.reservation.updateMany({
+        where: { id: reservationId, tenantId: ctx.tenantId, status: existing.status },
         data: { status: 'CANCELLED', cancellationReason: reason.trim() },
       });
+      if (claimed.count !== 1) {
+        throw new DomainError('RESERVATION_NOT_CANCELLABLE', 'La reserva cambió de estado; recarga e intenta de nuevo.', 409);
+      }
+      const updated = await tx.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+      if (existing.unitId) {
+        // Extra guests never happened: reverse the pending charge. Cleaning stays (non-refundable).
+        await syncExtraGuestCharge(tx, {
+          tenantId: ctx.tenantId,
+          unitId: existing.unitId,
+          reservationId,
+          targetCents: 0,
+          now,
+        });
+      }
 
       await tx.auditLog.create({
         data: {
@@ -416,7 +489,7 @@ export class ReservationsService {
           entityId: reservationId,
           channel: ctx.channel,
           before: { status: existing.status },
-          after: { status: 'CANCELLED', reason: reason.trim() },
+          after: { status: 'CANCELLED', reason: reason.trim(), ...(outsidePolicy ? { outsidePolicy: true } : {}) },
         },
       });
 
@@ -466,9 +539,22 @@ export class ReservationsService {
       const lockAmenityIds = Array.from(
         new Set([...existing.amenities.map((a) => a.amenityId), ...sortedAmenityIds]),
       ).sort();
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${ctx.tenantId}:unit:${existing.unitId}`}))`;
+      const dayKeys = Array.from(
+        new Set([
+          ...touchedDayKeys(input.startsAt, input.endsAt, tenant?.timezone ?? 'America/Guayaquil', dayKey),
+          ...touchedDayKeys(
+            existing.startsAt.toISOString(),
+            existing.endsAt.toISOString(),
+            tenant?.timezone ?? 'America/Guayaquil',
+          ),
+        ]),
+      ).sort();
       for (const amenityId of lockAmenityIds) {
-        const lockKey = `${ctx.tenantId}:${amenityId}:${dayKey}`;
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+        for (const dk of dayKeys) {
+          const lockKey = `${ctx.tenantId}:${amenityId}:${dk}`;
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+        }
       }
 
       const evalInput = await this.buildEvaluationInput(
@@ -495,6 +581,28 @@ export class ReservationsService {
         );
       }
 
+      // Recompute status: adding a paid cleaning area to a CONFIRMED booking must not skip C03,
+      // and removing the only cleaning charge from a pending booking confirms it.
+      let nextStatus = existing.status;
+      let nextHoldExpiresAt = existing.holdExpiresAt;
+      if (existing.status === 'CONFIRMED' && result.initialStatus === 'PENDING_PAYMENT') {
+        const paid = await tx.paymentProof.aggregate({
+          where: { tenantId: ctx.tenantId, reservationId: existing.id, status: 'APPROVED' },
+          _sum: { amountCents: true },
+        });
+        const cleaningDue = result.charges
+          .filter((c) => c.type === 'CLEANING')
+          .reduce((sum, c) => sum + c.amountCents, 0);
+        if ((paid._sum.amountCents ?? 0) < cleaningDue) {
+          const settings = await tx.tenantSettings.findUnique({ where: { tenantId: ctx.tenantId } });
+          nextStatus = 'PENDING_PAYMENT';
+          nextHoldExpiresAt = new Date(now.getTime() + (settings?.paymentProofDeadlineMinutes ?? 240) * 60_000);
+        }
+      } else if (existing.status === 'PENDING_PAYMENT' && result.initialStatus === 'CONFIRMED') {
+        nextStatus = 'CONFIRMED';
+        nextHoldExpiresAt = null;
+      }
+
       await tx.reservationAmenity.deleteMany({
         where: { reservationId: existing.id, tenantId: ctx.tenantId },
       });
@@ -502,6 +610,8 @@ export class ReservationsService {
       const updated = await tx.reservation.update({
         where: { id: existing.id },
         data: {
+          status: nextStatus,
+          holdExpiresAt: nextHoldExpiresAt,
           startsAt: new Date(input.startsAt),
           endsAt: new Date(input.endsAt),
           declaredAttendees: input.declaredAttendees,
@@ -533,18 +643,35 @@ export class ReservationsService {
             endsAt: existing.endsAt.toISOString(),
             declaredAttendees: existing.declaredAttendees,
             amenityIds: existing.amenities.map((a) => a.amenityId),
+            status: existing.status,
+            totalCents: existing.totalCents,
           },
           after: {
             startsAt: updated.startsAt.toISOString(),
             endsAt: updated.endsAt.toISOString(),
             declaredAttendees: updated.declaredAttendees,
             amenityIds: sortedAmenityIds,
+            status: updated.status,
+            totalCents: updated.totalCents,
           },
         },
       });
 
-      if (updated.status === 'CONFIRMED' && this.accessService) {
-        await this.accessService.syncUpdatedReservationCredentialInTx(tx, ctx, updated.id, now);
+      await syncExtraGuestCharge(tx, {
+        tenantId: ctx.tenantId,
+        unitId: existing.unitId,
+        reservationId: existing.id,
+        targetCents: chargeCents(result.charges, 'EXTRA_GUEST'),
+        now,
+      });
+
+      if (this.accessService) {
+        if (updated.status === 'CONFIRMED') {
+          await this.accessService.syncUpdatedReservationCredentialInTx(tx, ctx, updated.id, now);
+        } else if (existing.status === 'CONFIRMED') {
+          // Back to PENDING_PAYMENT: the QR must stop opening doors until the cleaning is paid.
+          await this.accessService.revokeCredentialsForReservationInTx(tx, ctx, updated.id, now);
+        }
       }
 
       return updated;
@@ -553,15 +680,54 @@ export class ReservationsService {
 
   async expirePendingReservations(ctx: TenantContext, now: Date = new Date()): Promise<number> {
     return this.prisma.withTenant(ctx, async (tx) => {
+      const expiring = await tx.reservation.findMany({
+        where: { tenantId: ctx.tenantId, status: 'PENDING_PAYMENT', holdExpiresAt: { lte: now } },
+        select: { id: true, unitId: true },
+      });
+      if (expiring.length === 0) return 0;
+      const ids = expiring.map((r) => r.id);
       const result = await tx.reservation.updateMany({
         where: {
+          id: { in: ids },
           tenantId: ctx.tenantId,
           status: 'PENDING_PAYMENT',
           holdExpiresAt: { lte: now },
         },
         data: { status: 'EXPIRED' },
       });
+      for (const r of expiring) {
+        if (r.unitId) {
+          await syncExtraGuestCharge(tx, { tenantId: ctx.tenantId, unitId: r.unitId, reservationId: r.id, targetCents: 0, now });
+        }
+      }
+      await tx.auditLog.createMany({
+        data: ids.map((id) => ({
+          id: generateUuidV7(now.getTime()),
+          tenantId: ctx.tenantId,
+          actorType: ctx.actorType,
+          actorId: ctx.actorId,
+          action: 'RESERVATION_EXPIRED',
+          entity: 'Reservation',
+          entityId: id,
+          channel: ctx.channel,
+          before: { status: 'PENDING_PAYMENT' },
+          after: { status: 'EXPIRED' },
+        })),
+      });
       return result.count;
     });
+  }
+
+  /** Expires unpaid holds across every tenant (scheduled job). */
+  async expirePendingReservationsAllTenants(now: Date = new Date()): Promise<number> {
+    const tenants = await this.prisma.tenant.findMany({ select: { id: true } });
+    let total = 0;
+    for (const t of tenants) {
+      total += await this.expirePendingReservations(
+        { tenantId: t.id, actorType: 'SYSTEM', actorId: 'scheduler', channel: 'SYSTEM' },
+        now,
+      );
+    }
+    return total;
   }
 }

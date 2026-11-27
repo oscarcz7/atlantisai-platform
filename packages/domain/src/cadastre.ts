@@ -87,5 +87,6 @@ export function maskNationalId(raw: string): string {
   if (clean.length <= 6) {
     return `${clean.slice(0, 1)}***${clean.slice(-2)}`;
   }
-  return `${clean.slice(0, 2)}${'*'.repeat(clean.length - 6)}${clean.slice(-4)}`;
+  // Only the last 4 digits: the first two (province) plus last four used to reveal 6 of 10.
+  return `${'*'.repeat(clean.length - 4)}${clean.slice(-4)}`;
 }

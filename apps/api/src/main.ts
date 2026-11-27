@@ -6,6 +6,8 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module.js';
 import { DomainErrorFilter } from './common/filters/domain-error.filter.js';
 import { JsonLogger } from './common/logging/json-logger.service.js';
+import { createRateLimitMiddleware } from './common/security/rate-limit.js';
+import { securityHeadersMiddleware } from './common/security/security-headers.js';
 
 async function bootstrap(): Promise<void> {
   if (process.env['SENTRY_DSN']) {
@@ -17,6 +19,16 @@ async function bootstrap(): Promise<void> {
 
   const logger = new JsonLogger();
   const app = await NestFactory.create(AppModule, { logger });
+  // Behind Cloud Run's front end: trust N proxy hops so req.ip is the real client IP
+  // (rightmost untrusted X-Forwarded-For entry; a client-forged XFF prefix is ignored).
+  const trustHops = Number(process.env['TRUST_PROXY_HOPS'] ?? (process.env['NODE_ENV'] === 'production' ? 1 : 0));
+  const express = app.getHttpAdapter().getInstance() as { set(k: string, v: unknown): void; disable(k: string): void };
+  express.disable('x-powered-by');
+  if (trustHops > 0) {
+    express.set('trust proxy', trustHops);
+  }
+  app.use(securityHeadersMiddleware(process.env['NODE_ENV'] === 'production'));
+  app.use(createRateLimitMiddleware());
   app.use(cookieParser());
   const corsOrigins = (process.env['WEB_URL'] ?? 'http://localhost:3000')
     .split(',')

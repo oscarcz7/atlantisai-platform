@@ -9,6 +9,12 @@ import { TotpService } from './crypto/totp.service.js';
 import { MAILER_TOKEN, type Mailer } from './mailer/mailer.interface.js';
 
 const MAX_FAILED_ATTEMPTS = 5;
+/** Lazily computed argon2 hash used to equalise timing when the e-mail does not exist. */
+let dummyHashPromise: Promise<string> | null = null;
+function getDummyHash(): Promise<string> {
+  dummyHashPromise ??= argon2.hash('dummy-password-for-timing-equalisation');
+  return dummyHashPromise;
+}
 const LOCK_DURATION_MS = 15 * 60 * 1000;
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const SETUP_2FA_TTL_SECONDS = 10 * 60;
@@ -98,6 +104,8 @@ export class AuthService {
     });
 
     if (!user || !user.isActive || !user.passwordHash) {
+      // Same argon2 cost as a real check so response time does not reveal registered e-mails.
+      await argon2.verify(await getDummyHash(), input.password).catch(() => false);
       await this.recordAuthAudit(user?.id ?? null, null, 'LOGIN_FAILED', meta.ipAddress, {
         reason: !user ? 'UNKNOWN_EMAIL' : !user.isActive ? 'USER_INACTIVE' : 'NO_PASSWORD',
       });
@@ -115,29 +123,7 @@ export class AuthService {
 
     const passwordValid = await argon2.verify(user.passwordHash, input.password);
     if (!passwordValid) {
-      const nextAttempts = user.failedLoginAttempts + 1;
-      const shouldLock = nextAttempts >= MAX_FAILED_ATTEMPTS;
-      await this.prisma.staffUser.update({
-        where: { id: user.id },
-        data: {
-          failedLoginAttempts: shouldLock ? 0 : nextAttempts,
-          lockedUntil: shouldLock ? new Date(now.getTime() + LOCK_DURATION_MS) : null,
-        },
-      });
-      await this.recordAuthAudit(
-        user.id,
-        user.id,
-        shouldLock ? 'ACCOUNT_LOCKED' : 'LOGIN_FAILED',
-        meta.ipAddress,
-        { attempts: nextAttempts },
-      );
-      if (shouldLock) {
-        throw new DomainError(
-          'ACCOUNT_LOCKED',
-          'Cuenta bloqueada por 15 minutos tras 5 intentos fallidos.',
-          423,
-        );
-      }
+      await this.registerFailedAttempt(user.id, 'LOGIN_FAILED', meta, now);
       throw new DomainError('INVALID_CREDENTIALS', 'Correo o contraseña incorrectos.', 401);
     }
 
@@ -156,19 +142,26 @@ export class AuthService {
     let secondFactorOk = false;
     if (input.totpCode) {
       const secret = this.encryption.decrypt(user.totpSecretEnc);
-      secondFactorOk = this.totp.verifyCode(secret, input.totpCode, now.getTime());
+      const counter = this.totp.matchCounter(secret, input.totpCode, now.getTime());
+      if (counter !== null) {
+        // Atomic anti-replay: only accept a time step newer than the last accepted one.
+        const claimed = await this.prisma.staffUser.updateMany({
+          where: {
+            id: user.id,
+            OR: [{ totpLastCounter: null }, { totpLastCounter: { lt: counter } }],
+          },
+          data: { totpLastCounter: counter },
+        });
+        secondFactorOk = claimed.count === 1;
+      }
     } else if (input.recoveryCode) {
       const codeHash = this.encryption.hashToken(input.recoveryCode.trim().toUpperCase());
-      const stored = await this.prisma.staffRecoveryCode.findFirst({
+      // Atomic single use: concurrent requests cannot both consume the same code.
+      const consumed = await this.prisma.staffRecoveryCode.updateMany({
         where: { staffUserId: user.id, codeHash, usedAt: null },
+        data: { usedAt: now },
       });
-      if (stored) {
-        await this.prisma.staffRecoveryCode.update({
-          where: { id: stored.id },
-          data: { usedAt: now },
-        });
-        secondFactorOk = true;
-      }
+      secondFactorOk = consumed.count === 1;
     } else {
       throw new DomainError(
         'TOTP_REQUIRED',
@@ -178,7 +171,15 @@ export class AuthService {
     }
 
     if (!secondFactorOk) {
-      await this.recordAuthAudit(user.id, user.id, 'LOGIN_FAILED_2FA', meta.ipAddress);
+      // Failed second factors count toward the same lockout as wrong passwords (anti brute force).
+      const locked = await this.registerFailedAttempt(user.id, 'LOGIN_FAILED_2FA', meta, now);
+      if (locked) {
+        throw new DomainError(
+          'ACCOUNT_LOCKED',
+          'Cuenta bloqueada por 15 minutos tras 5 intentos fallidos.',
+          423,
+        );
+      }
       throw new DomainError('INVALID_TOTP', 'Código de verificación inválido.', 401);
     }
 
@@ -192,10 +193,47 @@ export class AuthService {
     return { tokens };
   }
 
+  /** Increments the failed-attempt counter atomically; locks the account at the threshold. */
+  private async registerFailedAttempt(
+    userId: string,
+    action: 'LOGIN_FAILED' | 'LOGIN_FAILED_2FA',
+    meta: RequestMeta,
+    now: Date,
+  ): Promise<boolean> {
+    const updated = await this.prisma.staffUser.update({
+      where: { id: userId },
+      data: { failedLoginAttempts: { increment: 1 } },
+      select: { failedLoginAttempts: true },
+    });
+    const attempts = updated.failedLoginAttempts;
+    const shouldLock = attempts >= MAX_FAILED_ATTEMPTS;
+    if (shouldLock) {
+      await this.prisma.staffUser.update({
+        where: { id: userId },
+        data: { failedLoginAttempts: 0, lockedUntil: new Date(now.getTime() + LOCK_DURATION_MS) },
+      });
+    }
+    await this.recordAuthAudit(userId, userId, shouldLock ? 'ACCOUNT_LOCKED' : action, meta.ipAddress, {
+      attempts,
+    });
+    if (shouldLock && action === 'LOGIN_FAILED') {
+      throw new DomainError('ACCOUNT_LOCKED', 'Cuenta bloqueada por 15 minutos tras 5 intentos fallidos.', 423);
+    }
+    return shouldLock;
+  }
+
   async setupTotp(userId: string): Promise<{ secret: string; otpAuthUri: string; qrDataUrl: string }> {
     const user = await this.prisma.staffUser.findUnique({ where: { id: userId } });
     if (!user || !user.isActive) {
       throw new DomainError('USER_NOT_FOUND', 'Usuario no encontrado.', 404);
+    }
+    if (user.totpEnabled) {
+      // Re-enrolling would let a stolen access token replace the victim's second factor.
+      throw new DomainError(
+        'TOTP_ALREADY_ENABLED',
+        'La verificación en dos pasos ya está activa. Solicita a un administrador que la restablezca.',
+        409,
+      );
     }
     const secret = this.totp.generateSecret();
     const secretEnc = this.encryption.encrypt(secret);
@@ -223,9 +261,17 @@ export class AuthService {
     if (!user || !user.isActive || !user.totpSecretEnc) {
       throw new DomainError('TOTP_NOT_INITIALIZED', 'Primero debes iniciar la configuración de 2FA.', 400);
     }
+    if (user.totpEnabled) {
+      throw new DomainError(
+        'TOTP_ALREADY_ENABLED',
+        'La verificación en dos pasos ya está activa.',
+        409,
+      );
+    }
 
     const secret = this.encryption.decrypt(user.totpSecretEnc);
-    if (!this.totp.verifyCode(secret, code, now.getTime())) {
+    const counter = this.totp.matchCounter(secret, code, now.getTime());
+    if (counter === null) {
       throw new DomainError('INVALID_TOTP', 'El código TOTP no es válido.', 422);
     }
 
@@ -241,7 +287,13 @@ export class AuthService {
       });
       await tx.staffUser.update({
         where: { id: user.id },
-        data: { totpEnabled: true, failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: now },
+        data: {
+          totpEnabled: true,
+          totpLastCounter: counter,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+          lastLoginAt: now,
+        },
       });
     });
 

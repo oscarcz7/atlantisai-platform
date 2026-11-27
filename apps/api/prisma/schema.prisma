@@ -129,10 +129,12 @@ model Tenant {
   contacts     Json?
   officeHours  Json?    @map("office_hours")
   bankAccounts Json?    @map("bank_accounts")
+  /// SHA-256 of the per-tenant Edge Gateway token (plaintext is shown once on rotation)
+  gatewayTokenHash      String?   @unique @map("gateway_token_hash")
+  gatewayTokenRotatedAt DateTime? @map("gateway_token_rotated_at") @db.Timestamptz
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  auditLogs      AuditLog[]
   staffUsers     StaffUserTenant[]
   settings       TenantSettings?
   unitTypes      UnitType[]
@@ -162,6 +164,7 @@ model StaffUser {
   isActive            Boolean   @default(true) @map("is_active")
   totpSecretEnc       String?   @map("totp_secret_enc")
   totpEnabled         Boolean   @default(false) @map("totp_enabled")
+  totpLastCounter     Int?      @map("totp_last_counter")
   failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime? @map("locked_until") @db.Timestamptz
   lastLoginAt         DateTime? @map("last_login_at") @db.Timestamptz
@@ -269,7 +272,7 @@ model AuditLog {
   after     Json?
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // No FK to tenants on purpose: the audit trail must survive tenant deletion.
 
   @@index([tenantId])
   @@index([tenantId, createdAt])

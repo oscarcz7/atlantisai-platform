@@ -11,6 +11,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { FieldEncryptionService } from '../auth/crypto/field-encryption.service.js';
+import { assertPersonInTenant, assertUnitInTenant, assertUnitTypeInTenant } from '../../common/prisma/tenant-refs.js';
 
 export interface ImportRowInput {
   unitNumber: string;
@@ -24,6 +25,34 @@ export interface ImportRowInput {
   role: OccupancyRole;
   validFrom: string;
   validTo?: string;
+}
+
+/**
+ * Audit rows are readable by ACCOUNTANT/ADMIN and kept forever: never store encrypted/hashed
+ * national IDs there, and mask contact data (constitution VIII).
+ */
+const AUDIT_DROP_KEYS = new Set(['nationalIdEnc', 'nationalIdHash']);
+function maskContact(key: string, value: unknown): unknown {
+  if (typeof value !== 'string' || value.length === 0) return value;
+  if (key === 'waPhone') return value.length > 4 ? `${'*'.repeat(value.length - 4)}${value.slice(-4)}` : '****';
+  if (key === 'email') {
+    const [user = '', domain = ''] = value.split('@');
+    return `${user.slice(0, 1)}***@${domain}`;
+  }
+  return value;
+}
+export function sanitizeAuditPayload(payload: unknown): unknown {
+  if (Array.isArray(payload)) return payload.map(sanitizeAuditPayload);
+  if (payload instanceof Date) return payload.toISOString();
+  if (payload && typeof payload === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(payload as Record<string, unknown>)) {
+      if (AUDIT_DROP_KEYS.has(k)) continue;
+      out[k] = k === 'waPhone' || k === 'email' ? maskContact(k, v) : sanitizeAuditPayload(v);
+    }
+    return out;
+  }
+  return payload;
 }
 
 @Injectable()
@@ -52,8 +81,8 @@ export class CadastreService {
         entity,
         entityId,
         channel: ctx.channel,
-        before: before ? (before as Prisma.InputJsonValue) : Prisma.JsonNull,
-        after: after ? (after as Prisma.InputJsonValue) : Prisma.JsonNull,
+        before: before ? (sanitizeAuditPayload(before) as Prisma.InputJsonValue) : Prisma.JsonNull,
+        after: after ? (sanitizeAuditPayload(after) as Prisma.InputJsonValue) : Prisma.JsonNull,
       },
     });
   }
@@ -194,6 +223,9 @@ export class CadastreService {
       if (!existing) {
         throw new DomainError('UNIT_NOT_FOUND', 'Unidad no encontrada.', 404);
       }
+      if (input.unitTypeId !== undefined) {
+        await assertUnitTypeInTenant(tx, ctx.tenantId, input.unitTypeId);
+      }
       const nextArea = input.areaSqm !== undefined ? input.areaSqm : existing.areaSqm;
       let nextMonthlyFee = input.monthlyFeeCents;
       if (nextMonthlyFee === undefined && input.areaSqm !== undefined && nextArea !== null && nextArea > 0) {
@@ -330,7 +362,7 @@ export class CadastreService {
           tenantId: ctx.tenantId,
           fullName: input.fullName.trim(),
           nationalIdEnc: this.encryption.encrypt(cleanNationalId),
-          nationalIdHash: this.encryption.hashToken(cleanNationalId),
+          nationalIdHash: this.encryption.hashNationalId(cleanNationalId),
           nationalIdMask: maskNationalId(cleanNationalId),
           waPhone,
           email: input.email?.trim().toLowerCase(),
@@ -378,6 +410,8 @@ export class CadastreService {
     }
 
     return this.prisma.withTenant(ctx, async (tx) => {
+      await assertUnitInTenant(tx, ctx.tenantId, input.unitId);
+      await assertPersonInTenant(tx, ctx.tenantId, input.personId);
       const created = await tx.occupancy.create({
         data: {
           id: generateUuidV7(),
@@ -473,7 +507,7 @@ export class CadastreService {
             tenantId: ctx.tenantId,
             fullName: row.personFullName.trim(),
             nationalIdEnc: this.encryption.encrypt(cleanId),
-            nationalIdHash: this.encryption.hashToken(cleanId),
+            nationalIdHash: this.encryption.hashNationalId(cleanId),
             nationalIdMask: maskNationalId(cleanId),
             waPhone,
             email: row.email?.trim().toLowerCase(),

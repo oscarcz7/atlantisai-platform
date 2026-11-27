@@ -59,21 +59,31 @@ export class TotpService {
   }
 
   verifyCode(secret: string, code: string, nowMs: number = Date.now(), window = 1): boolean {
+    return this.matchCounter(secret, code, nowMs, window) !== null;
+  }
+
+  /**
+   * Returns the time-step counter the code matches (within ±window), or null.
+   * Callers persist it and reject counters <= the last accepted one (anti-replay).
+   */
+  matchCounter(secret: string, code: string, nowMs: number = Date.now(), window = 1): number | null {
     const normalized = code.replace(/\s+/g, '');
     if (!/^\d{6}$/.test(normalized)) {
-      return false;
+      return null;
     }
     const currentCounter = Math.floor(nowMs / 1000 / STEP_SECONDS);
     const inputBuf = Buffer.from(normalized, 'utf8');
 
+    let matched: number | null = null;
     for (let offset = -window; offset <= window; offset++) {
       const expected = this.hotp(secret, currentCounter + offset);
       const expectedBuf = Buffer.from(expected, 'utf8');
-      if (timingSafeEqual(inputBuf, expectedBuf)) {
-        return true;
+      // No early return: constant work regardless of which step matches.
+      if (timingSafeEqual(inputBuf, expectedBuf) && matched === null) {
+        matched = currentCounter + offset;
       }
     }
-    return false;
+    return matched;
   }
 
   buildOtpAuthUri(email: string, secret: string, issuer = 'Plataforma NOAH'): string {

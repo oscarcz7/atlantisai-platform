@@ -10,11 +10,14 @@ export interface JobQueue {
   stop(): Promise<void>;
   enqueue<T extends JobPayload>(queueName: string, payload: T): Promise<string | null>;
   work<T extends JobPayload>(queueName: string, handler: JobHandler<T>): Promise<void>;
+  /** Registers a cluster-wide cron schedule (only one instance runs each tick). */
+  schedule(queueName: string, cron: string, payload?: JobPayload): Promise<void>;
 }
 
 export const JOB_QUEUE_TOKEN = Symbol('JOB_QUEUE_TOKEN');
 
 export const SYSTEM_HEARTBEAT_QUEUE = 'system.heartbeat';
+export const RESERVATIONS_EXPIRE_QUEUE = 'reservations.expire-holds';
 
 /**
  * Deterministic in-memory JobQueue implementation for unit tests.
@@ -42,5 +45,10 @@ export class InMemoryJobQueue implements JobQueue {
 
   async work<T extends JobPayload>(queueName: string, handler: JobHandler<T>): Promise<void> {
     this.handlers.set(queueName, handler as JobHandler);
+  }
+
+  public readonly schedules: Array<{ queueName: string; cron: string }> = [];
+  async schedule(queueName: string, cron: string): Promise<void> {
+    this.schedules.push({ queueName, cron });
   }
 }

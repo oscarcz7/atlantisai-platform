@@ -50,7 +50,7 @@ describe('Cadastre integration (Spec 004)', () => {
       waPhone: '0984555922',
       email: 'maria@example.com',
     });
-    expect(owner.nationalId).toBe('17****5678');
+    expect(owner.nationalId).toBe('******5678');
     expect(owner.waPhone).toBe('+593984555922');
 
     // Duplicate WhatsApp phone in same building must fail

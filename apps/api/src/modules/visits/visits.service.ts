@@ -3,6 +3,7 @@ import { DomainError, generateUuidV7, maskNationalId, type TenantContext } from 
 import { calculateParkingOvertime } from '@noah/rules';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { FieldEncryptionService } from '../auth/crypto/field-encryption.service.js';
+import { assertReservationInTenant, assertUnitInTenant } from '../../common/prisma/tenant-refs.js';
 
 @Injectable()
 export class VisitsService {
@@ -93,6 +94,7 @@ export class VisitsService {
   ) {
     const cleanId = input.nationalId.trim();
     return this.prisma.withTenant(ctx, async (tx) => {
+      await assertUnitInTenant(tx, ctx.tenantId, input.hostUnitId);
       const created = await tx.visit.create({
         data: {
           id: generateUuidV7(),
@@ -130,6 +132,13 @@ export class VisitsService {
       if (!visit) {
         throw new DomainError('VISIT_NOT_FOUND', 'Visita no encontrada.', 404);
       }
+      if (visit.checkInAt) {
+        // Re-check-in would reset the parking timer and dodge the overtime charge.
+        throw new DomainError('VISIT_ALREADY_CHECKED_IN', 'La visita ya tiene entrada registrada.', 409);
+      }
+
+      // Serialize spot assignment per tenant: two guards cannot hand out the same spot.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'parking:' + ctx.tenantId}))`;
 
       let assignedSpot: number | null = null;
       if (visit.needsParking || parkingSpot !== undefined) {
@@ -164,10 +173,14 @@ export class VisitsService {
         }
       }
 
-      return tx.visit.update({
-        where: { id: visit.id },
+      const claimed = await tx.visit.updateMany({
+        where: { id: visit.id, tenantId: ctx.tenantId, checkInAt: null },
         data: { checkInAt: now, parkingSpot: assignedSpot },
       });
+      if (claimed.count !== 1) {
+        throw new DomainError('VISIT_ALREADY_CHECKED_IN', 'La visita ya tiene entrada registrada.', 409);
+      }
+      return tx.visit.findUniqueOrThrow({ where: { id: visit.id } });
     });
   }
 
@@ -179,6 +192,14 @@ export class VisitsService {
       const visit = await tx.visit.findFirst({ where: { id: visitId, tenantId: ctx.tenantId } });
       if (!visit || !visit.checkInAt) {
         throw new DomainError('VISIT_NOT_CHECKED_IN', 'La visita no tiene entrada registrada.', 422);
+      }
+      // Claim the exit atomically first: a repeated check-out must not charge overtime twice.
+      const claimed = await tx.visit.updateMany({
+        where: { id: visit.id, tenantId: ctx.tenantId, checkOutAt: null },
+        data: { checkOutAt: now },
+      });
+      if (claimed.count !== 1) {
+        throw new DomainError('VISIT_ALREADY_CHECKED_OUT', 'La visita ya tiene salida registrada.', 409);
       }
 
       let overtimeCents = 0;
@@ -240,6 +261,14 @@ export class VisitsService {
       throw new DomainError('INVALID_GUEST_COUNT', 'La cantidad debe ser mayor a 0.', 422);
     }
     return this.prisma.withTenant(ctx, async (tx) => {
+      await assertUnitInTenant(tx, ctx.tenantId, input.unitId);
+      const reservation = await assertReservationInTenant(tx, ctx.tenantId, input.reservationId);
+      if (reservation.unitId !== input.unitId) {
+        throw new DomainError('RESERVATION_UNIT_MISMATCH', 'La reserva no pertenece a esa unidad.', 409);
+      }
+      if (!['CONFIRMED', 'COMPLETED'].includes(reservation.status)) {
+        throw new DomainError('RESERVATION_NOT_ACTIVE', 'La reserva no está confirmada.', 409);
+      }
       const settings = await tx.tenantSettings.findUniqueOrThrow({
         where: { tenantId: ctx.tenantId },
       });

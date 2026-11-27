@@ -3,6 +3,18 @@ import { DomainError, generateUuidV7, type TenantContext } from '@noah/domain';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { AccessService } from '../access/access.service.js';
+import { assertReservationInTenant, assertUnitInTenant } from '../../common/prisma/tenant-refs.js';
+import { computeArrearsMonths, reservationLedgerRef } from './arrears.js';
+import { ensureCleaningCharge } from './reservation-ledger.js';
+
+/** Sum of CLEANING charges (amount due before confirmation). Falls back to total if unknown. */
+function upfrontCentsFromCharges(charges: unknown, totalCents: number): number {
+  if (!Array.isArray(charges)) return totalCents;
+  return charges.reduce<number>((sum, c) => {
+    const item = c as { type?: unknown; amountCents?: unknown };
+    return item.type === 'CLEANING' && typeof item.amountCents === 'number' ? sum + item.amountCents : sum;
+  }, 0);
+}
 
 @Injectable()
 export class BillingService {
@@ -70,26 +82,10 @@ export class BillingService {
   }
 
   computeArrearsMonths(
-    entries: Array<{ type: string; amountCents: number; dueDate: Date | null }>,
+    entries: Array<{ type: string; amountCents: number; dueDate: Date | null; reference?: string | null }>,
     now: Date,
   ): number {
-    const overdueFees = entries
-      .filter((e) => e.type === 'MONTHLY_FEE' && e.amountCents > 0 && e.dueDate && e.dueDate < now)
-      .sort((a, b) => (a.dueDate?.getTime() ?? 0) - (b.dueDate?.getTime() ?? 0));
-
-    let totalPaid = entries
-      .filter((e) => e.amountCents < 0)
-      .reduce((sum, e) => sum + Math.abs(e.amountCents), 0);
-
-    let unpaidOverdueCount = 0;
-    for (const fee of overdueFees) {
-      if (totalPaid >= fee.amountCents) {
-        totalPaid -= fee.amountCents;
-      } else {
-        unpaidOverdueCount++;
-      }
-    }
-    return unpaidOverdueCount;
+    return computeArrearsMonths(entries, now);
   }
 
   async addLedgerEntry(
@@ -110,7 +106,18 @@ export class BillingService {
       dueDate?: string;
     },
   ) {
+    // Sign convention: charges are positive, payments negative, adjustments either way.
+    if (!Number.isInteger(input.amountCents) || input.amountCents === 0) {
+      throw new DomainError('INVALID_AMOUNT', 'El monto debe ser un entero distinto de 0 (centavos).', 422);
+    }
+    if (input.type === 'PAYMENT' && input.amountCents > 0) {
+      throw new DomainError('INVALID_AMOUNT_SIGN', 'Un pago debe registrarse con monto negativo.', 422);
+    }
+    if (input.type !== 'PAYMENT' && input.type !== 'ADJUSTMENT' && input.amountCents < 0) {
+      throw new DomainError('INVALID_AMOUNT_SIGN', 'Un cargo debe registrarse con monto positivo.', 422);
+    }
     return this.prisma.withTenant(ctx, async (tx) => {
+      await assertUnitInTenant(tx, ctx.tenantId, input.unitId);
       const entry = await tx.ledgerEntry.create({
         data: {
           id: generateUuidV7(),
@@ -131,6 +138,8 @@ export class BillingService {
   async generateMonthlyFees(ctx: TenantContext, billingMonth: string, dueDateIso: string) {
     const dueDate = new Date(dueDateIso);
     return this.prisma.withTenant(ctx, async (tx) => {
+      // Serialize per (tenant, month): concurrent runs would both pass the "exists" check.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`monthly-fees:${ctx.tenantId}:${billingMonth}`}))`;
       const units = await tx.unit.findMany({
         where: { tenantId: ctx.tenantId, isActive: true, monthlyFeeCents: { gt: 0 } },
       });
@@ -182,6 +191,7 @@ export class BillingService {
     }
 
     return this.prisma.withTenant(ctx, async (tx) => {
+      await assertUnitInTenant(tx, ctx.tenantId, input.unitId);
       let account = await tx.depositAccount.findUnique({
         where: { tenantId_unitId: { tenantId: ctx.tenantId, unitId: input.unitId } },
       });
@@ -197,7 +207,17 @@ export class BillingService {
       }
 
       const delta = input.type === 'DEPOSIT' ? input.amountCents : -input.amountCents;
-      const nextBalance = Math.max(0, account.balanceCents + delta);
+      // Lock the account row so concurrent movements cannot lose updates.
+      await tx.$queryRaw`SELECT id FROM deposit_accounts WHERE id = ${account.id}::uuid FOR UPDATE`;
+      const locked = await tx.depositAccount.findUniqueOrThrow({ where: { id: account.id } });
+      if (locked.balanceCents + delta < 0) {
+        // Never clamp silently: balance must always equal the sum of movements.
+        throw new DomainError(
+          'DEPOSIT_INSUFFICIENT_BALANCE',
+          `El movimiento excede el saldo de la garantía (saldo actual: ${locked.balanceCents} centavos).`,
+          422,
+        );
+      }
 
       const movement = await tx.depositMovement.create({
         data: {
@@ -213,7 +233,7 @@ export class BillingService {
 
       const updated = await tx.depositAccount.update({
         where: { id: account.id },
-        data: { balanceCents: nextBalance },
+        data: { balanceCents: { increment: delta } },
       });
 
       await this.recordAudit(
@@ -222,7 +242,7 @@ export class BillingService {
         `DEPOSIT_${input.type}`,
         'DepositAccount',
         account.id,
-        { balanceCents: account.balanceCents },
+        { balanceCents: locked.balanceCents },
         { balanceCents: updated.balanceCents, reason: input.reason },
       );
 
@@ -252,7 +272,17 @@ export class BillingService {
       extractedBy?: 'HUMAN' | 'AI';
     },
   ) {
+    if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
+      throw new DomainError('INVALID_AMOUNT', 'El monto del comprobante debe ser mayor a 0.', 422);
+    }
     return this.prisma.withTenant(ctx, async (tx) => {
+      await assertUnitInTenant(tx, ctx.tenantId, input.unitId);
+      if (input.reservationId) {
+        const reservation = await assertReservationInTenant(tx, ctx.tenantId, input.reservationId);
+        if (reservation.unitId !== input.unitId) {
+          throw new DomainError('PAYMENT_PROOF_UNIT_MISMATCH', 'La reserva no pertenece a esa unidad.', 409);
+        }
+      }
       const transferDate = new Date(input.transferDate);
       const duplicate = await tx.paymentProof.findFirst({
         where: {
@@ -319,10 +349,32 @@ export class BillingService {
         throw new DomainError('PAYMENT_PROOF_ALREADY_REVIEWED', 'Este comprobante ya fue revisado.', 409);
       }
 
-      const updatedProof = await tx.paymentProof.update({
-        where: { id: proof.id },
+      const linkedReservation = proof.reservationId
+        ? await tx.reservation.findFirst({
+            where: { id: proof.reservationId, tenantId: ctx.tenantId },
+            select: { id: true, unitId: true, totalCents: true, charges: true },
+          })
+        : null;
+      if (proof.reservationId && !linkedReservation) {
+        throw new DomainError('RESERVATION_NOT_FOUND', 'La reserva vinculada al comprobante no existe.', 404);
+      }
+      if (linkedReservation && linkedReservation.unitId !== proof.unitId) {
+        throw new DomainError(
+          'PAYMENT_PROOF_UNIT_MISMATCH',
+          'El comprobante pertenece a una unidad distinta a la de la reserva.',
+          409,
+        );
+      }
+
+      // Atomic PENDING -> APPROVED: two accountants approving at once cannot both succeed.
+      const transition = await tx.paymentProof.updateMany({
+        where: { id: proof.id, tenantId: ctx.tenantId, status: 'PENDING' },
         data: { status: 'APPROVED', reviewedBy: ctx.actorId, reviewedAt: now },
       });
+      if (transition.count !== 1) {
+        throw new DomainError('PAYMENT_PROOF_ALREADY_REVIEWED', 'Este comprobante ya fue revisado.', 409);
+      }
+      const updatedProof = await tx.paymentProof.findUniqueOrThrow({ where: { id: proof.id } });
 
       const paymentEntry = await tx.ledgerEntry.create({
         data: {
@@ -332,11 +384,14 @@ export class BillingService {
           type: 'PAYMENT',
           amountCents: -proof.amountCents,
           description: `Pago aprobado (${proof.bank} · Ref. ${proof.reference})`,
-          reference: proof.reference,
+          // Reservation payments are tagged so they net against that reservation's charges
+          // and never silently cover monthly fees (R04).
+          reference: linkedReservation ? reservationLedgerRef(linkedReservation.id) : proof.reference,
         },
       });
 
-      // Sequential receipt number per tenant
+      // Sequential receipt number per tenant (serialized per tenant within this transaction)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'receipt:' + ctx.tenantId}))`;
       const lastReceipt = await tx.collectionReceipt.findFirst({
         where: { tenantId: ctx.tenantId },
         orderBy: { sequenceNumber: 'desc' },
@@ -358,17 +413,40 @@ export class BillingService {
         },
       });
 
-      if (proof.reservationId) {
+      if (linkedReservation) {
+        await ensureCleaningCharge(tx, {
+          tenantId: ctx.tenantId,
+          unitId: proof.unitId,
+          reservationId: linkedReservation.id,
+          cleaningCents: upfrontCentsFromCharges(linkedReservation.charges, linkedReservation.totalCents),
+          now,
+        });
+      }
+
+      // Only confirm the reservation once approved payments cover its total.
+      let reservationConfirmed = false;
+      let outstandingCents = 0;
+      if (linkedReservation) {
+        const paid = await tx.paymentProof.aggregate({
+          where: { tenantId: ctx.tenantId, reservationId: linkedReservation.id, status: 'APPROVED' },
+          _sum: { amountCents: true },
+        });
+        // C03: only the cleaning fee is paid upfront; extra guests (C01) go to the unit account.
+        const upfrontCents = upfrontCentsFromCharges(linkedReservation.charges, linkedReservation.totalCents);
+        outstandingCents = Math.max(0, upfrontCents - (paid._sum.amountCents ?? 0));
+      }
+      if (linkedReservation && outstandingCents === 0) {
         const resUpdate = await tx.reservation.updateMany({
           where: {
-            id: proof.reservationId,
+            id: linkedReservation.id,
             tenantId: ctx.tenantId,
             status: { in: ['PENDING_PAYMENT', 'IN_REVIEW'] },
           },
           data: { status: 'CONFIRMED', holdExpiresAt: null },
         });
-        if (resUpdate.count > 0 && this.accessService) {
-          await this.accessService.issueCredentialForReservationInTx(tx, ctx, proof.reservationId, now);
+        reservationConfirmed = resUpdate.count > 0;
+        if (reservationConfirmed && this.accessService) {
+          await this.accessService.issueCredentialForReservationInTx(tx, ctx, linkedReservation.id, now);
         }
       }
 
@@ -379,10 +457,16 @@ export class BillingService {
         'PaymentProof',
         proof.id,
         { status: 'PENDING' },
-        { status: 'APPROVED', receiptCode, reservationId: proof.reservationId },
+        {
+          status: 'APPROVED',
+          receiptCode,
+          reservationId: proof.reservationId,
+          reservationConfirmed,
+          outstandingCents,
+        },
       );
 
-      return { proof: updatedProof, paymentEntry, receipt };
+      return { proof: updatedProof, paymentEntry, receipt, reservationConfirmed, outstandingCents };
     });
   }
 
@@ -403,8 +487,13 @@ export class BillingService {
         throw new DomainError('PAYMENT_PROOF_NOT_FOUND', 'Comprobante no encontrado.', 404);
       }
 
-      const updated = await tx.paymentProof.update({
-        where: { id: proof.id },
+      if (proof.status !== 'PENDING') {
+        // An APPROVED proof already produced a PAYMENT entry and receipt; rejecting it would
+        // leave the books inconsistent. Reversals must go through an explicit adjustment.
+        throw new DomainError('PAYMENT_PROOF_ALREADY_REVIEWED', 'Este comprobante ya fue revisado.', 409);
+      }
+      const rejected = await tx.paymentProof.updateMany({
+        where: { id: proof.id, tenantId: ctx.tenantId, status: 'PENDING' },
         data: {
           status: 'REJECTED',
           rejectionReason: reason.trim(),
@@ -412,6 +501,10 @@ export class BillingService {
           reviewedAt: now,
         },
       });
+      if (rejected.count !== 1) {
+        throw new DomainError('PAYMENT_PROOF_ALREADY_REVIEWED', 'Este comprobante ya fue revisado.', 409);
+      }
+      const updated = await tx.paymentProof.findUniqueOrThrow({ where: { id: proof.id } });
 
       if (proof.reservationId) {
         await tx.reservation.updateMany({

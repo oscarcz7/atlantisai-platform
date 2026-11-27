@@ -47,6 +47,6 @@ describe('@noah/domain cadastre helpers', () => {
   });
 
   it('masks national IDs safely', () => {
-    expect(maskNationalId('1712345678')).toBe('17****5678');
+    expect(maskNationalId('1712345678')).toBe('******5678');
   });
 });

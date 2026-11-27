@@ -54,7 +54,7 @@ describe('Reservations integration: rules, concurrency, idempotency, expiration 
       catalogService.listUnitTypes(ctx),
       catalogService.listAmenities(ctx),
     ]);
-    const suite = unitTypes.find((ut) => ut.code === 'SUITE')!;
+    const suite = unitTypes.find((ut) => ut.code === '2D')!; // 2 bedrooms, 3 included guests
     gymId = amenities.find((a) => a.code === 'GYM')!.id;
     bbqId = amenities.find((a) => a.code === 'BBQ')!.id;
     loungeId = amenities.find((a) => a.code === 'LOUNGE')!.id;
@@ -146,6 +146,18 @@ describe('Reservations integration: rules, concurrency, idempotency, expiration 
     const r1Dup = await reservationsService.create(ctx, gymInput, now);
     expect(r1Dup.id).toBe(r1.id);
 
+    // 1b. P-12: extra guests are posted once to the unit account as a pending charge (idempotent)
+    const extraNet = async (reservationId: string) =>
+      (
+        await prisma.withTenant(ctx, (tx) =>
+          tx.ledgerEntry.aggregate({
+            where: { tenantId: ctx.tenantId, reference: `RESERVATION:${reservationId}`, type: 'EXTRA_GUEST' },
+            _sum: { amountCents: true },
+          }),
+        )
+      )._sum.amountCents ?? 0;
+    expect(await extraNet(r1.id)).toBe(500);
+
     // 2. Concurrent exclusive Combo BBQ + Lounge bookings: strictly 1 succeeds, 1 rejected with SLOT_TAKEN
     const [resA, resB] = await Promise.allSettled([
       reservationsService.create(
@@ -186,5 +198,22 @@ describe('Reservations integration: rules, concurrency, idempotency, expiration 
     const after5Hours = new Date(now.getTime() + 300 * 60_000);
     const expiredCount = await reservationsService.expirePendingReservations(ctx, after5Hours);
     expect(expiredCount).toBe(1);
+
+    // 4. Cancellation policy (24 h in seed): a resident cannot cancel 9 h before; staff can, flagged
+    await expect(
+      reservationsService.cancel(
+        { ...ctx, actorType: 'PERSON', actorId: owner1Id, channel: 'WHATSAPP', role: 'OWNER_RESIDENT' },
+        r1.id,
+        'Ya no voy',
+        now,
+      ),
+    ).rejects.toMatchObject({ code: 'CANCELLATION_TOO_LATE' });
+    await reservationsService.cancel({ ...ctx, actorType: 'STAFF', role: 'ADMIN' }, r1.id, 'Cambio de planes', now);
+    const cancelAudit = await prisma.withTenant(ctx, (tx) =>
+      tx.auditLog.findFirst({ where: { entityId: r1.id, action: 'RESERVATION_CANCELLED' } }),
+    );
+    expect((cancelAudit?.after as { outsidePolicy?: boolean } | null)?.outsidePolicy).toBe(true);
+    // ...and the pending extra-guest charge is reversed (net 0 on the unit account)
+    expect(await extraNet(r1.id)).toBe(0);
   });
 });
