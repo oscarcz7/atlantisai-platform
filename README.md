@@ -26,3 +26,20 @@ NestJS · Next.js · PostgreSQL 16 + pgvector · Prisma · pg-boss · pnpm + Tur
 ## Fases
 
 0 Base técnica → 1 Dashboard y motor de reglas → 2 QR y lectores → 3 WhatsApp e IA → 4 Piloto NOAH.
+
+## Administración de usuarios del dashboard
+
+El dashboard lo usan tres roles de staff (administración, contabilidad y guardianía). El alta de usuarios se hace **solo por script** (no hay envío de correos):
+
+```bash
+# Crear usuario (la contraseña temporal se muestra una sola vez; 2FA obligatoria en el primer ingreso)
+pnpm --filter @noah/api staff:create -- --email ana@ejemplo.com --name "Ana Pérez" --role ADMIN --tenant noah
+
+# Perdió el teléfono del autenticador: restablece 2FA y cierra sus sesiones
+pnpm --filter @noah/api staff:reset-2fa -- --email ana@ejemplo.com
+
+# Olvidó la contraseña: genera una temporal nueva y cierra sus sesiones
+pnpm --filter @noah/api staff:reset-password -- --email ana@ejemplo.com
+```
+
+Roles: `SUPERADMIN` (consola SaaS, sin `--tenant`), `ADMIN`, `ACCOUNTANT`, `GUARD`. Cada acción queda en `staff_auth_audits`. Entrega la contraseña temporal por un canal seguro.
