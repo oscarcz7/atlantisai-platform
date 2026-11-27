@@ -1,4 +1,4 @@
-const API_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:4000';
+import { fetchWithSession } from './session';
 
 export interface CancellationPolicyDto {
   minHoursBefore?: number;
@@ -98,15 +98,11 @@ async function catalogFetch<T>(
   tenantId: string,
   options: { method?: string; body?: unknown } = {},
 ): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetchWithSession(path, {
     method: options.method ?? 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      'x-tenant-id': tenantId,
-    },
-    credentials: 'include',
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    token,
+    tenantId,
+    body: options.body,
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {

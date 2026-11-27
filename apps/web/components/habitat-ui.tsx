@@ -3,6 +3,8 @@
 import type { ReactNode } from 'react';
 import { Check, AlertCircle, Sparkles, X, type LucideIcon } from 'lucide-react';
 
+export { SearchableSelect, type SelectOption, type SearchableSelectProps } from './searchable-select';
+
 export function ModuleHero({
   eyebrow,
   title,
@@ -126,5 +128,42 @@ export function HabitatDrawer({
         <div className="h-drawer-body">{children}</div>
       </div>
     </div>
+  );
+}
+
+export function DomainTag({
+  label,
+  bg,
+  color,
+  border,
+  title,
+  compact = false,
+}: {
+  label: string;
+  bg: string;
+  color: string;
+  border?: string;
+  title?: string;
+  compact?: boolean;
+}) {
+  return (
+    <span
+      title={title}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: compact ? '2px 7px' : '3px 9px',
+        borderRadius: '999px',
+        fontSize: compact ? '10.5px' : '11px',
+        fontWeight: 600,
+        lineHeight: 1.25,
+        backgroundColor: bg,
+        color,
+        border: border ? `1px solid ${border}` : undefined,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </span>
   );
 }

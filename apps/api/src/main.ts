@@ -18,8 +18,12 @@ async function bootstrap(): Promise<void> {
   const logger = new JsonLogger();
   const app = await NestFactory.create(AppModule, { logger });
   app.use(cookieParser());
+  const corsOrigins = (process.env['WEB_URL'] ?? 'http://localhost:3000')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: process.env['WEB_URL'] ?? 'http://localhost:3000',
+    origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
     credentials: true,
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   DomainError,
   generateUuidV7,
@@ -14,6 +14,7 @@ import {
 } from '@noah/rules';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
+import { AccessService } from '../access/access.service.js';
 
 export interface CreateReservationInput {
   unitId: string;
@@ -24,6 +25,14 @@ export interface CreateReservationInput {
   declaredAttendees: number;
   attendees?: Array<{ name?: string; waPhone?: string }>;
   idempotencyKey?: string;
+  excludeReservationId?: string;
+}
+
+export interface UpdateReservationInput {
+  amenityIds: string[];
+  startsAt: string;
+  endsAt: string;
+  declaredAttendees: number;
 }
 
 export interface CreateAdminBlockInput {
@@ -35,7 +44,10 @@ export interface CreateAdminBlockInput {
 
 @Injectable()
 export class ReservationsService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional() @Inject(AccessService) private readonly accessService?: AccessService,
+  ) {}
 
   private async buildEvaluationInput(
     tx: Prisma.TransactionClient,
@@ -61,6 +73,7 @@ export class ReservationsService {
         tx.reservation.findMany({
           where: {
             tenantId: ctx.tenantId,
+            ...(input.excludeReservationId ? { id: { not: input.excludeReservationId } } : {}),
             status: { in: ['PENDING_PAYMENT', 'IN_REVIEW', 'CONFIRMED', 'COMPLETED', 'ADMIN_BLOCK'] },
           },
           include: { amenities: { select: { amenityId: true } } },
@@ -290,6 +303,10 @@ export class ReservationsService {
         },
       });
 
+      if (created.status === 'CONFIRMED' && this.accessService) {
+        await this.accessService.issueCredentialForReservationInTx(tx, ctx, created.id, now);
+      }
+
       return created;
     });
   }
@@ -310,8 +327,13 @@ export class ReservationsService {
         },
         include: {
           unit: { select: { id: true, number: true } },
-          person: { select: { id: true, fullName: true } },
+          person: { select: { id: true, fullName: true, waPhone: true } },
           amenities: { include: { amenity: { select: { id: true, code: true, name: true } } } },
+          credentials: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { id: true, employeeNo: true, code: true, syncStatus: true },
+          },
         },
         orderBy: { startsAt: 'asc' },
       }),
@@ -397,6 +419,133 @@ export class ReservationsService {
           after: { status: 'CANCELLED', reason: reason.trim() },
         },
       });
+
+      if (this.accessService) {
+        await this.accessService.revokeCredentialsForReservationInTx(tx, ctx, reservationId, now);
+      }
+
+      return updated;
+    });
+  }
+
+  async update(
+    ctx: TenantContext,
+    reservationId: string,
+    input: UpdateReservationInput,
+    now: Date = new Date(),
+  ) {
+    return this.prisma.withTenant(ctx, async (tx) => {
+      const existing = await tx.reservation.findFirst({
+        where: { id: reservationId, tenantId: ctx.tenantId },
+        include: { amenities: true },
+      });
+      if (!existing) {
+        throw new DomainError('RESERVATION_NOT_FOUND', 'Reserva no encontrada.', 404);
+      }
+      if (!['CONFIRMED', 'PENDING_PAYMENT', 'IN_REVIEW'].includes(existing.status)) {
+        throw new DomainError(
+          'RESERVATION_NOT_EDITABLE',
+          'Solo se pueden editar reservas confirmadas o pendientes de pago.',
+          422,
+        );
+      }
+      if (!existing.unitId || !existing.personId) {
+        throw new DomainError(
+          'ADMIN_BLOCK_NOT_EDITABLE',
+          'Los bloqueos administrativos no se editan desde este formulario.',
+          422,
+        );
+      }
+
+      const tenant = await tx.tenant.findUnique({ where: { id: ctx.tenantId } });
+      const dayKey = getLocalDateParts(
+        new Date(input.startsAt),
+        tenant?.timezone ?? 'America/Guayaquil',
+      ).dayKey;
+      const sortedAmenityIds = Array.from(new Set(input.amenityIds)).sort();
+      const lockAmenityIds = Array.from(
+        new Set([...existing.amenities.map((a) => a.amenityId), ...sortedAmenityIds]),
+      ).sort();
+      for (const amenityId of lockAmenityIds) {
+        const lockKey = `${ctx.tenantId}:${amenityId}:${dayKey}`;
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+      }
+
+      const evalInput = await this.buildEvaluationInput(
+        tx,
+        ctx,
+        {
+          unitId: existing.unitId,
+          personId: existing.personId,
+          amenityIds: sortedAmenityIds,
+          startsAt: input.startsAt,
+          endsAt: input.endsAt,
+          declaredAttendees: input.declaredAttendees,
+          excludeReservationId: existing.id,
+        },
+        now,
+      );
+      const result = evaluateReservation(evalInput);
+      if (!result.ok) {
+        throw new DomainError(
+          result.code,
+          REJECTION_MESSAGES_ES[result.code],
+          result.code === 'SLOT_TAKEN' ? 409 : 422,
+          result.details,
+        );
+      }
+
+      await tx.reservationAmenity.deleteMany({
+        where: { reservationId: existing.id, tenantId: ctx.tenantId },
+      });
+
+      const updated = await tx.reservation.update({
+        where: { id: existing.id },
+        data: {
+          startsAt: new Date(input.startsAt),
+          endsAt: new Date(input.endsAt),
+          declaredAttendees: input.declaredAttendees,
+          totalCents: result.totalCents,
+          charges: result.charges as unknown as Prisma.InputJsonValue,
+          amenities: {
+            create: sortedAmenityIds.map((amenityId) => ({
+              id: generateUuidV7(now.getTime()),
+              tenantId: ctx.tenantId,
+              amenityId,
+            })),
+          },
+        },
+        include: { amenities: true, attendees: true },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          id: generateUuidV7(now.getTime()),
+          tenantId: ctx.tenantId,
+          actorType: ctx.actorType,
+          actorId: ctx.actorId,
+          action: 'RESERVATION_UPDATED',
+          entity: 'Reservation',
+          entityId: updated.id,
+          channel: ctx.channel,
+          before: {
+            startsAt: existing.startsAt.toISOString(),
+            endsAt: existing.endsAt.toISOString(),
+            declaredAttendees: existing.declaredAttendees,
+            amenityIds: existing.amenities.map((a) => a.amenityId),
+          },
+          after: {
+            startsAt: updated.startsAt.toISOString(),
+            endsAt: updated.endsAt.toISOString(),
+            declaredAttendees: updated.declaredAttendees,
+            amenityIds: sortedAmenityIds,
+          },
+        },
+      });
+
+      if (updated.status === 'CONFIRMED' && this.accessService) {
+        await this.accessService.syncUpdatedReservationCredentialInTx(tx, ctx, updated.id, now);
+      }
 
       return updated;
     });

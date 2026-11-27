@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Pencil, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
-import { Money, StatusBadge } from '@noah/ui';
-import { HabitatDrawer, HabitatTabs, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
+import { Money } from '@noah/ui';
+import { DomainTag, HabitatDrawer, HabitatTabs, HabitatToast, ModuleHero, SearchableSelect } from '../../../components/habitat-ui';
+import { getAmenityModeMeta } from '../../../lib/labels';
 import {
   type AccessRuleDto,
   type AmenityDto,
@@ -22,12 +23,6 @@ const ROLES: Array<{ key: AccessRuleDto['occupancyRole']; label: string }> = [
   { key: 'AIRBNB_HOST', label: 'Anfitrión Airbnb' },
   { key: 'AIRBNB_GUEST', label: 'Huésped Airbnb' },
 ];
-
-const MODE_LABELS: Record<AmenityDto['mode'], string> = {
-  SHARED: 'Compartida',
-  EXCLUSIVE: 'Exclusiva',
-  FREE_USE: 'Uso libre',
-};
 
 const PERIOD_LABELS: Record<'DAY' | 'WEEK' | 'MONTH', string> = {
   DAY: 'día',
@@ -467,10 +462,16 @@ export default function BuildingConfigPage() {
             </label>
             <label className="h-field">
               Inicio de semana para frecuencias
-              <select disabled={!canEdit} value={weekStart} onChange={(e) => setWeekStart(e.target.value)} className="h-input">
-                <option value="MONDAY">Lunes</option>
-                <option value="SUNDAY">Domingo</option>
-              </select>
+              <SearchableSelect
+                disabled={!canEdit}
+                value={weekStart}
+                onChange={setWeekStart}
+                searchPlaceholder="Buscar día..."
+                options={[
+                  { value: 'MONDAY', label: 'Lunes' },
+                  { value: 'SUNDAY', label: 'Domingo' },
+                ]}
+              />
             </label>
             <label className="h-field">
               Cancelación sin penalidad (horas antes)
@@ -478,16 +479,17 @@ export default function BuildingConfigPage() {
             </label>
             <label className="h-field">
               Tarifa de limpieza al cancelar
-              <select
+              <SearchableSelect
                 disabled={!canEdit}
                 value={cancelCleaning}
-                onChange={(e) => setCancelCleaning(e.target.value as 'NON_REFUNDABLE' | 'REFUNDABLE' | 'CREDIT')}
-                className="h-input"
-              >
-                <option value="NON_REFUNDABLE">No reembolsable</option>
-                <option value="CREDIT">Crédito a favor</option>
-                <option value="REFUNDABLE">Reembolsable</option>
-              </select>
+                onChange={(val) => setCancelCleaning(val as 'NON_REFUNDABLE' | 'REFUNDABLE' | 'CREDIT')}
+                searchPlaceholder="Buscar política..."
+                options={[
+                  { value: 'NON_REFUNDABLE', label: 'No reembolsable' },
+                  { value: 'CREDIT', label: 'Crédito a favor' },
+                  { value: 'REFUNDABLE', label: 'Reembolsable' },
+                ]}
+              />
             </label>
           </div>
           {canEdit && (
@@ -529,8 +531,17 @@ export default function BuildingConfigPage() {
                   <td>{a.schedule?.all ? `${a.schedule.all.open}–${a.schedule.all.close}` : 'Sin límite'}</td>
                   <td>{a.frequency ? `${a.frequency.max}/${PERIOD_LABELS[a.frequency.period]}` : 'Libre'}</td>
                   <td>
-                    <StatusBadge status={a.mode === 'EXCLUSIVE' ? 'IN_REVIEW' : 'OK'} />{' '}
-                    <span style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>{MODE_LABELS[a.mode]}</span>
+                    {(() => {
+                      const modeMeta = getAmenityModeMeta(a.mode);
+                      return (
+                        <DomainTag
+                          label={modeMeta.label}
+                          bg={modeMeta.bg}
+                          color={modeMeta.color}
+                          border={modeMeta.border}
+                        />
+                      );
+                    })()}
                   </td>
                   <td>{a.cleaningFeeCents > 0 ? <Money cents={a.cleaningFeeCents} /> : '—'}</td>
                   {canEdit && (
@@ -663,10 +674,16 @@ export default function BuildingConfigPage() {
             </label>
             <label className="h-field">
               Redondeo de exceso
-              <select disabled={!canEdit} value={parkingRounding} onChange={(e) => setParkingRounding(e.target.value)} className="h-input">
-                <option value="CEIL_HOUR">Hora o fracción (hacia arriba)</option>
-                <option value="EXACT_MINUTE">Proporcional por minuto</option>
-              </select>
+              <SearchableSelect
+                disabled={!canEdit}
+                value={parkingRounding}
+                onChange={setParkingRounding}
+                searchPlaceholder="Buscar redondeo..."
+                options={[
+                  { value: 'CEIL_HOUR', label: 'Hora o fracción (hacia arriba)' },
+                  { value: 'EXACT_MINUTE', label: 'Proporcional por minuto' },
+                ]}
+              />
             </label>
           </div>
           {canEdit && (
@@ -706,18 +723,28 @@ export default function BuildingConfigPage() {
             </label>
             <label className="h-field">
               Modo de uso
-              <select value={amMode} onChange={(e) => setAmMode(e.target.value as AmenityDto['mode'])} className="h-input">
-                <option value="SHARED">Compartida (por aforo)</option>
-                <option value="EXCLUSIVE">Exclusiva (1 unidad a la vez)</option>
-                <option value="FREE_USE">Uso libre (sin reserva)</option>
-              </select>
+              <SearchableSelect
+                value={amMode}
+                onChange={(val) => setAmMode(val as AmenityDto['mode'])}
+                searchPlaceholder="Buscar modo..."
+                options={[
+                  { value: 'SHARED', label: 'Compartida (por aforo)' },
+                  { value: 'EXCLUSIVE', label: 'Exclusiva (1 unidad a la vez)' },
+                  { value: 'FREE_USE', label: 'Uso libre (sin reserva)' },
+                ]}
+              />
             </label>
             <label className="h-field">
               Política de anticipación
-              <select value={amAdvance} onChange={(e) => setAmAdvance(e.target.value as AmenityDto['advancePolicy'])} className="h-input">
-                <option value="SHORT_NOTICE_ALLOWED">Aviso corto (1 h)</option>
-                <option value="GENERAL">General (24 h)</option>
-              </select>
+              <SearchableSelect
+                value={amAdvance}
+                onChange={(val) => setAmAdvance(val as AmenityDto['advancePolicy'])}
+                searchPlaceholder="Buscar política..."
+                options={[
+                  { value: 'SHORT_NOTICE_ALLOWED', label: 'Aviso corto (1 h)' },
+                  { value: 'GENERAL', label: 'General (24 h)' },
+                ]}
+              />
             </label>
           </div>
 
@@ -741,12 +768,17 @@ export default function BuildingConfigPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <label className="h-field">
                 Límite de frecuencia
-                <select value={amFreqPeriod} onChange={(e) => setAmFreqPeriod(e.target.value as 'NONE' | 'DAY' | 'WEEK' | 'MONTH')} className="h-input">
-                  <option value="NONE">Sin límite</option>
-                  <option value="DAY">Por día</option>
-                  <option value="WEEK">Por semana</option>
-                  <option value="MONTH">Por mes</option>
-                </select>
+                <SearchableSelect
+                  value={amFreqPeriod}
+                  onChange={(val) => setAmFreqPeriod(val as 'NONE' | 'DAY' | 'WEEK' | 'MONTH')}
+                  searchPlaceholder="Buscar límite..."
+                  options={[
+                    { value: 'NONE', label: 'Sin límite' },
+                    { value: 'DAY', label: 'Por día' },
+                    { value: 'WEEK', label: 'Por semana' },
+                    { value: 'MONTH', label: 'Por mes' },
+                  ]}
+                />
               </label>
               {amFreqPeriod !== 'NONE' && (
                 <label className="h-field">

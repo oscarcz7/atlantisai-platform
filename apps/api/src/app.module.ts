@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from './common/prisma/prisma.module.js';
 import { QueueModule } from './common/queue/queue.module.js';
+import { AccessModule } from './modules/access/access.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { BillingModule } from './modules/billing/billing.module.js';
@@ -21,6 +22,7 @@ import { VisitsModule } from './modules/visits/visits.module.js';
     CatalogModule,
     CadastreModule,
     ReservationsModule,
+    AccessModule,
     BillingModule,
     VisitsModule,
     IncidentsModule,

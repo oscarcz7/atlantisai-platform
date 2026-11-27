@@ -1,11 +1,15 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { DomainError, generateUuidV7, type TenantContext } from '@noah/domain';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
+import { AccessService } from '../access/access.service.js';
 
 @Injectable()
 export class BillingService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional() @Inject(AccessService) private readonly accessService?: AccessService,
+  ) {}
 
   private async recordAudit(
     tx: Prisma.TransactionClient,
@@ -355,7 +359,7 @@ export class BillingService {
       });
 
       if (proof.reservationId) {
-        await tx.reservation.updateMany({
+        const resUpdate = await tx.reservation.updateMany({
           where: {
             id: proof.reservationId,
             tenantId: ctx.tenantId,
@@ -363,6 +367,9 @@ export class BillingService {
           },
           data: { status: 'CONFIRMED', holdExpiresAt: null },
         });
+        if (resUpdate.count > 0 && this.accessService) {
+          await this.accessService.issueCredentialForReservationInTx(tx, ctx, proof.reservationId, now);
+        }
       }
 
       await this.recordAudit(

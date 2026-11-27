@@ -19,6 +19,15 @@ variable "region" {
 }
 variable "api_image" { type = string }
 variable "web_image" { type = string }
+variable "web_url" {
+  type        = string
+  default     = ""
+  description = "URL opcional del dashboard. Si se deja vacio, usa la URL *.run.app."
+}
+variable "cookie_same_site" {
+  type    = string
+  default = "none"
+}
 
 provider "google" {
   project = var.project_id
@@ -53,6 +62,12 @@ resource "google_project_iam_member" "api_cloudsql" {
   member  = "serviceAccount:${google_service_account.api_runtime.email}"
 }
 
+resource "google_project_iam_member" "api_secrets" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.api_runtime.email}"
+}
+
 module "db" {
   source      = "../../modules/cloud-sql"
   project_id  = var.project_id
@@ -73,7 +88,32 @@ module "secrets" {
   source     = "../../modules/secrets"
   project_id = var.project_id
   env        = "stg"
-  secret_ids = ["DATABASE_URL", "DATABASE_MIGRATION_URL", "JWT_SECRET", "FIELD_ENCRYPTION_KEY", "SENTRY_DSN"]
+  secret_ids = [
+    "DATABASE_URL",
+    "DATABASE_MIGRATION_URL",
+    "JWT_SECRET",
+    "FIELD_ENCRYPTION_KEY",
+    "GATEWAY_API_TOKEN",
+    "PASS_SIGNING_SECRET",
+    "SENTRY_DSN",
+  ]
+}
+
+module "web" {
+  source                = "../../modules/cloud-run-service"
+  project_id            = var.project_id
+  region                = var.region
+  env                   = "stg"
+  name                  = "noah-web"
+  image                 = var.web_image
+  service_account_email = google_service_account.web_runtime.email
+  min_instances         = 0
+  container_port        = 3000
+  health_path           = "/api/health"
+}
+
+locals {
+  resolved_web_url = var.web_url != "" ? var.web_url : module.web.uri
 }
 
 module "api" {
@@ -87,20 +127,82 @@ module "api" {
   min_instances            = 0
   cpu_always_allocated     = false
   cloudsql_connection_name = module.db.connection_name
+  container_port           = 8080
   health_path              = "/health"
+
+  env_vars = {
+    NODE_ENV                  = "production"
+    APP_TIMEZONE_DEFAULT      = "America/Guayaquil"
+    WEB_URL                   = local.resolved_web_url
+    PUBLIC_WEB_URL            = local.resolved_web_url
+    COOKIE_SAME_SITE          = var.cookie_same_site
+    STORAGE_DRIVER            = "gcs"
+    STORAGE_BUCKET            = module.storage.bucket_name
+    MAIL_DRIVER               = "console"
+    HIKVISION_EMPLOYEE_PREFIX = "NX"
+    HIKVISION_CARD_DIGITS     = "10"
+  }
+
+  secret_env_vars = {
+    DATABASE_URL         = "DATABASE_URL"
+    JWT_SECRET           = "JWT_SECRET"
+    FIELD_ENCRYPTION_KEY = "FIELD_ENCRYPTION_KEY"
+    GATEWAY_API_TOKEN    = "GATEWAY_API_TOKEN"
+    PASS_SIGNING_SECRET  = "PASS_SIGNING_SECRET"
+    SENTRY_DSN           = "SENTRY_DSN"
+  }
+
+  depends_on = [module.secrets, google_project_iam_member.api_secrets]
 }
 
-module "web" {
-  source                = "../../modules/cloud-run-service"
-  project_id            = var.project_id
-  region                = var.region
-  env                   = "stg"
-  name                  = "noah-web"
-  image                 = var.web_image
-  service_account_email = google_service_account.web_runtime.email
-  min_instances         = 0
-  health_path           = "/api/health"
+resource "google_cloud_run_v2_job" "api_migrate" {
+  name     = "noah-api-migrate"
+  location = var.region
+  project  = var.project_id
+
+  labels = {
+    app        = "noah-platform"
+    env        = "stg"
+    managed_by = "terraform"
+  }
+
+  template {
+    template {
+      service_account = google_service_account.api_runtime.email
+
+      volumes {
+        name = "cloudsql"
+        cloud_sql_instance {
+          instances = [module.db.connection_name]
+        }
+      }
+
+      containers {
+        image   = var.api_image
+        command = ["npx"]
+        args    = ["--yes", "prisma@5.22.0", "migrate", "deploy", "--schema=prisma/schema.prisma"]
+
+        env {
+          name = "DATABASE_URL"
+          value_source {
+            secret_key_ref {
+              secret  = "DATABASE_MIGRATION_URL"
+              version = "latest"
+            }
+          }
+        }
+
+        volume_mounts {
+          name       = "cloudsql"
+          mount_path = "/cloudsql"
+        }
+      }
+    }
+  }
+
+  depends_on = [module.secrets, google_project_iam_member.api_secrets]
 }
 
 output "api_url" { value = module.api.uri }
 output "web_url" { value = module.web.uri }
+output "cloudsql_connection_name" { value = module.db.connection_name }

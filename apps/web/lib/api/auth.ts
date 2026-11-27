@@ -1,4 +1,4 @@
-const API_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:4000';
+import { fetchWithSession } from './session';
 
 export interface StaffTenant {
   id: string;
@@ -29,22 +29,15 @@ export class ApiClientError extends Error {
 
 async function apiFetch<T>(
   path: string,
-  options: { method?: string; body?: unknown; token?: string; tenantId?: string } = {},
+  options: {
+    method?: string;
+    body?: unknown;
+    token?: string;
+    tenantId?: string;
+    skipAuthRefresh?: boolean;
+  } = {},
 ): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (options.token) {
-    headers['Authorization'] = `Bearer ${options.token}`;
-  }
-  if (options.tenantId) {
-    headers['x-tenant-id'] = options.tenantId;
-  }
-
-  const res = await fetch(`${API_URL}${path}`, {
-    method: options.method ?? 'GET',
-    headers,
-    credentials: 'include',
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  });
+  const res = await fetchWithSession(path, options);
 
   if (res.status === 204) {
     return undefined as T;
@@ -68,30 +61,36 @@ export const authApi = {
       setupToken?: string;
       accessToken?: string;
       user?: StaffProfile;
-    }>('/auth/login', { method: 'POST', body }),
+    }>('/auth/login', { method: 'POST', body, skipAuthRefresh: true }),
 
   setup2fa: (setupToken: string) =>
     apiFetch<{ secret: string; otpAuthUri: string; qrDataUrl: string }>('/auth/2fa/setup', {
       method: 'POST',
       token: setupToken,
+      skipAuthRefresh: true,
     }),
 
   confirm2fa: (setupToken: string, code: string) =>
     apiFetch<{ recoveryCodes: string[]; accessToken: string; user: StaffProfile }>(
       '/auth/2fa/confirm',
-      { method: 'POST', token: setupToken, body: { code } },
+      { method: 'POST', token: setupToken, body: { code }, skipAuthRefresh: true },
     ),
 
   forgotPassword: (email: string) =>
-    apiFetch<{ ok: boolean }>('/auth/forgot-password', { method: 'POST', body: { email } }),
+    apiFetch<{ ok: boolean }>('/auth/forgot-password', {
+      method: 'POST',
+      body: { email },
+      skipAuthRefresh: true,
+    }),
 
   resetPassword: (token: string, newPassword: string) =>
     apiFetch<{ ok: boolean }>('/auth/reset-password', {
       method: 'POST',
       body: { token, newPassword },
+      skipAuthRefresh: true,
     }),
 
-  logout: () => apiFetch<void>('/auth/logout', { method: 'POST' }),
+  logout: () => apiFetch<void>('/auth/logout', { method: 'POST', skipAuthRefresh: true }),
 
   me: (token: string) => apiFetch<StaffProfile>('/auth/me', { token }),
 

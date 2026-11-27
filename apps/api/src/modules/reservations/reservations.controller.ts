@@ -7,6 +7,7 @@ import {
   HttpCode,
   Inject,
   Param,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -15,6 +16,7 @@ import { CurrentTenant, Roles } from '../auth/decorators/roles.decorator.js';
 import {
   type CreateAdminBlockInput,
   type CreateReservationInput,
+  type UpdateReservationInput,
   ReservationsService,
 } from './reservations.service.js';
 
@@ -75,6 +77,16 @@ export class ReservationsController {
     @Body() body: CreateAdminBlockInput,
   ) {
     return this.reservationsService.createAdminBlock(requireTenant(ctx), body);
+  }
+
+  @Roles('SUPERADMIN', 'ADMIN')
+  @Patch(':id')
+  update(
+    @CurrentTenant() ctx: TenantContext | undefined,
+    @Param('id') id: string,
+    @Body() body: UpdateReservationInput,
+  ) {
+    return this.reservationsService.update(requireTenant(ctx), id, body);
   }
 
   @Roles('SUPERADMIN', 'ADMIN')

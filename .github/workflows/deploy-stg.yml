@@ -38,7 +38,10 @@ jobs:
       - name: Build and push Web image
         run: |
           IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/noah/web:${GITHUB_SHA}"
-          docker build -f apps/web/Dockerfile -t "${IMAGE}" .
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL="${{ vars.NEXT_PUBLIC_API_URL_STG }}" \
+            --build-arg NEXT_PUBLIC_SITE_URL="${{ vars.NEXT_PUBLIC_SITE_URL_STG }}" \
+            -f apps/web/Dockerfile -t "${IMAGE}" .
           docker push "${IMAGE}"
 
       - name: Run database migrations (Cloud Run Job)
@@ -49,7 +52,7 @@ jobs:
             --region "${GCP_REGION}" \
             --image "${IMAGE}" \
             --command "npx" \
-            --args "prisma,migrate,deploy,--schema=prisma/schema.prisma"
+            --args "--yes,prisma@5.22.0,migrate,deploy,--schema=prisma/schema.prisma"
           gcloud run jobs execute noah-api-migrate \
             --project "${GCP_PROJECT}" \
             --region "${GCP_REGION}" \

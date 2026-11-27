@@ -17,7 +17,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
-import { ModuleHero } from '../../components/habitat-ui';
+import { ModuleHero, SearchableSelect } from '../../components/habitat-ui';
 import { authApi, type StaffProfile } from '../../lib/api/auth';
 import { useDashboard } from '../../lib/dashboard-context';
 
@@ -541,12 +541,19 @@ export default function DashboardOverviewPage() {
               </label>
               <label className="filter-box">
                 <SlidersHorizontal size={14} />
-                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                  <option value="ALL">Todas</option>
-                  <option value="OPEN">Abiertas</option>
-                  <option value="IN_PROGRESS">En curso</option>
-                  <option value="RESOLVED">Resueltas</option>
-                </select>
+                <SearchableSelect
+                  variant="bare"
+                  ariaLabel="Filtrar incidencias por estado"
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  searchPlaceholder="Filtrar estado..."
+                  options={[
+                    { value: 'ALL', label: 'Todas' },
+                    { value: 'OPEN', label: 'Abiertas' },
+                    { value: 'IN_PROGRESS', label: 'En curso' },
+                    { value: 'RESOLVED', label: 'Resueltas' },
+                  ]}
+                />
               </label>
             </div>
           </div>

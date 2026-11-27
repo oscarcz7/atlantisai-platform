@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Download, KeyRound, Pencil, Plus, Trash2, UserPlus, Users } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
-import { HabitatDrawer, HabitatTabs, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
+import { DomainTag, HabitatDrawer, HabitatTabs, HabitatToast, ModuleHero, SearchableSelect } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
 import { downloadCsv } from '../../../lib/export-csv';
+import { getOccupancyRoleMeta } from '../../../lib/labels';
 
 interface UnitTypeRow {
   id: string;
@@ -352,40 +353,60 @@ export default function CadastrePage() {
                     </td>
                     <td style={{ fontSize: '12.5px' }}>
                       {u.occupancies.length > 0 ? (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                          {u.occupancies.map((o) => (
-                            <span
-                              key={o.id}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                padding: '2px 8px',
-                                borderRadius: '999px',
-                                background: 'var(--muted)',
-                                fontSize: '11.5px',
-                              }}
-                            >
-                              {o.person.fullName} ({o.role})
-                              {canEdit && (
-                                <button
-                                  type="button"
-                                  title="Quitar ocupación"
-                                  onClick={() => void handleDeleteOccupancy(o.id, o.person.fullName)}
-                                  style={{ border: 0, background: 'transparent', cursor: 'pointer', color: '#b7544d', padding: '0 2px', fontWeight: 700 }}
-                                >
-                                  ×
-                                </button>
-                              )}
-                            </span>
-                          ))}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {u.occupancies.map((o) => {
+                            const roleMeta = getOccupancyRoleMeta(o.role);
+                            return (
+                              <span
+                                key={o.id}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '3px 8px 3px 10px',
+                                  borderRadius: '999px',
+                                  background: 'var(--muted)',
+                                  border: '1px solid var(--border)',
+                                  fontSize: '12px',
+                                }}
+                              >
+                                <span style={{ fontWeight: 500 }}>{o.person.fullName}</span>
+                                <DomainTag
+                                  compact
+                                  label={roleMeta.label}
+                                  bg={roleMeta.bg}
+                                  color={roleMeta.color}
+                                  border={roleMeta.border}
+                                />
+                                {canEdit && (
+                                  <button
+                                    type="button"
+                                    title="Quitar ocupación"
+                                    aria-label={`Quitar ocupación de ${o.person.fullName}`}
+                                    onClick={() => void handleDeleteOccupancy(o.id, o.person.fullName)}
+                                    style={{
+                                      border: 0,
+                                      background: 'transparent',
+                                      cursor: 'pointer',
+                                      color: '#b7544d',
+                                      padding: '0 2px',
+                                      fontWeight: 700,
+                                      lineHeight: 1,
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                )}
+                              </span>
+                            );
+                          })}
                         </div>
                       ) : (
                         '—'
                       )}
                     </td>
                     <td>
-                      <StatusBadge status={u.isActive ? 'OK' : 'CANCELLED'} />
+                      <StatusBadge status={u.isActive ? 'ACTIVE' : 'INACTIVE'} />
                     </td>
                     {canEdit && (
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
@@ -461,13 +482,16 @@ export default function CadastrePage() {
           </div>
           <label className="h-field">
             Tipología
-            <select value={uTypeId} onChange={(e) => handleTypeChange(e.target.value)} className="h-input">
-              {unitTypes.map((ut) => (
-                <option key={ut.id} value={ut.id}>
-                  {ut.name}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={uTypeId}
+              onChange={(val) => handleTypeChange(val)}
+              searchPlaceholder="Buscar tipología..."
+              options={unitTypes.map((ut) => ({
+                value: ut.id,
+                label: ut.name,
+                keywords: ut.code,
+              }))}
+            />
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <label className="h-field">
@@ -575,33 +599,44 @@ export default function CadastrePage() {
         <form onSubmit={handleCreateOccupancy} style={{ display: 'grid', gap: '14px', marginTop: error ? '12px' : 0 }}>
           <label className="h-field">
             Unidad
-            <select value={oUnitId} onChange={(e) => setOUnitId(e.target.value)} className="h-input">
-              {units.map((u) => (
-                <option key={u.id} value={u.id}>
-                  Depto. {u.number}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={oUnitId}
+              onChange={setOUnitId}
+              searchPlaceholder="Buscar unidad..."
+              options={units.map((u) => ({
+                value: u.id,
+                label: `Depto. ${u.number}`,
+                keywords: u.number,
+              }))}
+            />
           </label>
           <label className="h-field">
             Persona
-            <select value={oPersonId} onChange={(e) => setOPersonId(e.target.value)} className="h-input">
-              {persons.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.fullName} ({p.waPhone})
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={oPersonId}
+              onChange={setOPersonId}
+              searchPlaceholder="Buscar persona o teléfono..."
+              options={persons.map((p) => ({
+                value: p.id,
+                label: `${p.fullName} (${p.waPhone})`,
+                keywords: p.waPhone,
+              }))}
+            />
           </label>
           <label className="h-field">
             Rol de ocupación
-            <select value={oRole} onChange={(e) => setORole(e.target.value)} className="h-input">
-              <option value="OWNER_RESIDENT">Propietario residente</option>
-              <option value="LONG_TERM_TENANT">Arrendatario fijo</option>
-              <option value="OWNER_LANDLORD">Propietario arrendador</option>
-              <option value="AIRBNB_HOST">Anfitrión Airbnb</option>
-              <option value="AIRBNB_GUEST">Huésped Airbnb</option>
-            </select>
+            <SearchableSelect
+              value={oRole}
+              onChange={setORole}
+              searchPlaceholder="Buscar rol..."
+              options={[
+                { value: 'OWNER_RESIDENT', label: 'Propietario residente' },
+                { value: 'LONG_TERM_TENANT', label: 'Arrendatario fijo' },
+                { value: 'OWNER_LANDLORD', label: 'Propietario arrendador' },
+                { value: 'AIRBNB_HOST', label: 'Anfitrión Airbnb' },
+                { value: 'AIRBNB_GUEST', label: 'Huésped Airbnb' },
+              ]}
+            />
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <label className="h-field">

@@ -49,65 +49,188 @@ button {
 
 /* Shell Layout (Habitat Design) */
 .dashboard-shell {
-  width: min(100% - 40px, 1480px);
-  min-height: calc(100vh - 48px);
-  margin: 24px auto;
+  width: min(100% - 40px, 1520px);
+  min-height: calc(100vh - 40px);
+  margin: 20px auto;
   display: grid;
-  grid-template-columns: 66px minmax(0, 1fr);
-  gap: 17px;
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: 20px;
+  transition: grid-template-columns 0.2s ease;
+}
+
+.dashboard-shell.sidebar-collapsed {
+  grid-template-columns: 68px minmax(0, 1fr);
+}
+
+.sidebar-slot {
+  position: relative;
+  min-width: 0;
+  z-index: 30;
 }
 
 .sidebar {
   background: var(--card);
   border: 1px solid #ffffffcc;
-  border-radius: 28px;
-  padding: 15px 9px 12px;
+  border-radius: 26px;
+  padding: 16px 12px 14px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   position: sticky;
   top: 20px;
+  width: 100%;
   height: calc(100vh - 40px);
   box-shadow: 0 2px 10px rgba(60, 48, 34, 0.04);
+  transition: width 0.2s ease, box-shadow 0.2s ease, padding 0.2s ease;
+}
+
+.dashboard-shell.sidebar-collapsed .sidebar:not(.sidebar-hover-open) {
+  padding: 16px 10px 14px;
+  align-items: center;
+}
+
+.dashboard-shell.sidebar-collapsed .sidebar.sidebar-hover-open {
+  width: 236px;
+  padding: 16px 12px 14px;
+  align-items: stretch;
+  box-shadow: 0 14px 36px rgba(40, 37, 31, 0.14);
+  border-color: var(--border);
+  z-index: 40;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px 14px;
+  border-bottom: 1px solid #f0ece5;
+}
+
+.dashboard-shell.sidebar-collapsed .sidebar:not(.sidebar-hover-open) .sidebar-header {
+  justify-content: center;
+  padding: 0 0 14px;
+}
+
+.sidebar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--foreground);
+}
+
+.sidebar-brand-name {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.9px;
+  text-transform: lowercase;
+}
+
+.sidebar-toggle {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted-foreground);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+  transition: background 0.16s, color 0.16s;
+}
+
+.sidebar-toggle:hover {
+  background: var(--secondary);
+  color: var(--foreground);
 }
 
 .brand-mark {
-  width: 39px;
-  height: 39px;
+  width: 36px;
+  height: 36px;
   display: grid;
   place-items: center;
   text-decoration: none;
   color: white;
   background: var(--primary);
-  border-radius: 14px;
-  box-shadow: inset 0 0 0 4px #ffffff25;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 3px #ffffff25;
+  flex: none;
 }
 
 .side-nav {
-  margin-top: 32px;
+  margin-top: 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 14px;
   overflow-y: auto;
+  flex: 1;
+  padding-right: 2px;
+}
+
+.side-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.side-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  padding: 0 12px 3px;
+}
+
+.side-group-divider {
+  height: 1px;
+  width: 28px;
+  margin: 0 auto 6px;
+  background: var(--border);
+}
+
+.side-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .side-link,
 .icon-button {
   border: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   background: transparent;
-  color: #77736c;
-  border-radius: 13px;
+  color: #6b6760;
+  border-radius: 12px;
   cursor: pointer;
   text-decoration: none;
-  transition: background 0.18s, color 0.18s, transform 0.18s;
+  transition: background 0.16s, color 0.16s;
 }
 
 .side-link {
-  width: 42px;
-  height: 42px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
   flex: none;
+}
+
+.dashboard-shell.sidebar-collapsed .sidebar:not(.sidebar-hover-open) .side-link {
+  width: 42px;
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+}
+
+.side-link-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .side-link:hover,
@@ -119,19 +242,27 @@ button {
 .side-link.selected {
   color: white;
   background: #28251f;
-  box-shadow: 0 5px 12px #25231f20;
+  font-weight: 600;
+  box-shadow: 0 4px 10px #25231f20;
+}
+
+.side-link-muted {
+  color: var(--muted-foreground);
 }
 
 .sidebar-bottom {
-  margin-top: auto;
-  display: grid;
-  gap: 8px;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   padding-top: 12px;
+  border-top: 1px solid #f0ece5;
 }
 
 .icon-button {
   width: 38px;
   height: 38px;
+  justify-content: center;
   position: relative;
 }
 
@@ -143,13 +274,43 @@ button {
 }
 
 .topbar {
-  min-height: 58px;
+  min-height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  margin-bottom: 24px;
-  flex-wrap: wrap;
+  margin-bottom: 18px;
+  flex-wrap: nowrap;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.mobile-brand {
+  display: none;
+}
+
+.topbar-breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid #ffffffc7;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+  box-shadow: 0 2px 6px rgba(60, 48, 34, 0.03);
+  white-space: nowrap;
+}
+
+.topbar-breadcrumb strong {
+  color: var(--foreground);
+  font-weight: 600;
 }
 
 .brand {
@@ -1312,6 +1473,220 @@ button {
   cursor: not-allowed;
 }
 
+/* Searchable Select / Combobox (Habitat Design) */
+.h-select {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.h-select-default {
+  padding: 0 10px 0 13px;
+  min-height: 41px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 13.5px;
+}
+
+.h-select-default.h-select-open,
+.h-select-default:focus-within {
+  border-color: var(--primary);
+  background: var(--card);
+}
+
+.h-select-compact {
+  padding: 0 7px 0 10px;
+  min-height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 12.5px;
+  width: auto;
+  min-width: 132px;
+}
+
+.h-select-compact.h-select-open,
+.h-select-compact:focus-within {
+  border-color: var(--primary);
+  background: var(--card);
+}
+
+.h-select-bare {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12.5px;
+  width: auto;
+}
+
+.h-select-disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.h-select-search-icon {
+  color: var(--muted-foreground);
+  flex: none;
+}
+
+.h-select-input {
+  width: 100%;
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 8px 0;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.h-select-open .h-select-input {
+  cursor: text;
+}
+
+.h-select-compact .h-select-input,
+.h-select-bare .h-select-input {
+  padding: 4px 0;
+}
+
+.h-select-bare .h-select-input {
+  font-weight: 600;
+  min-width: 110px;
+}
+
+.h-select-input::placeholder {
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+
+.h-select-input:disabled {
+  cursor: not-allowed;
+}
+
+.h-select-action {
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  flex: none;
+  transition: color 0.15s, background 0.15s;
+}
+
+.h-select-action:hover:not(:disabled) {
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.h-select-chevron {
+  transition: transform 0.16s ease;
+}
+
+.h-select-chevron-open {
+  transform: rotate(180deg);
+}
+
+.h-select-menu {
+  position: fixed;
+  z-index: 120;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 5px;
+  overflow-y: auto;
+  box-shadow: 0 14px 36px rgba(32, 28, 22, 0.16), 0 2px 6px rgba(32, 28, 22, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.h-select-option {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  border-radius: 9px;
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  transition: background 0.12s;
+}
+
+.h-select-option-highlighted,
+.h-select-option:hover:not(:disabled) {
+  background: var(--secondary);
+}
+
+.h-select-option-selected {
+  background: #f9ece4;
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.h-select-option-selected.h-select-option-highlighted {
+  background: #f5e2d5;
+}
+
+.h-select-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.h-select-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.h-select-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h-select-option-desc {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h-select-check {
+  color: var(--primary);
+  flex: none;
+}
+
+.h-select-empty {
+  padding: 12px 10px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+}
+
 /* Floating Rounded Habitat Drawer */
 .h-drawer-backdrop {
   position: fixed;
@@ -1392,8 +1767,11 @@ button {
 @media (max-width: 1120px) {
   .dashboard-shell {
     width: min(100% - 24px, 1100px);
-    grid-template-columns: 58px minmax(0, 1fr);
-    gap: 12px;
+    grid-template-columns: 204px minmax(0, 1fr);
+    gap: 14px;
+  }
+  .dashboard-shell.sidebar-collapsed {
+    grid-template-columns: 62px minmax(0, 1fr);
   }
   .dashboard-grid {
     grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr);
@@ -1426,7 +1804,14 @@ button {
     width: min(100% - 20px, 560px);
     margin: 12px auto 48px;
   }
+  .sidebar-slot,
   .sidebar {
+    display: none;
+  }
+  .mobile-brand {
+    display: flex;
+  }
+  .topbar-breadcrumb {
     display: none;
   }
   .top-nav {

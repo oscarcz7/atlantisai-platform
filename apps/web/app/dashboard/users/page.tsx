@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Pencil, Plus, Trash2, UserCog } from 'lucide-react';
 import { StatusBadge } from '@noah/ui';
-import { HabitatDrawer, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
+import { HabitatDrawer, HabitatToast, ModuleHero, SearchableSelect } from '../../../components/habitat-ui';
 import { ApiClientError, authApi, type StaffProfile, type StaffTenant } from '../../../lib/api/auth';
 import { useDashboard } from '../../../lib/dashboard-context';
 
@@ -181,10 +181,10 @@ export default function StaffUsersPage() {
                           : '—'}
                     </td>
                     <td>
-                      <StatusBadge status={u.totpEnabled ? 'CONFIRMED' : 'PENDING_PAYMENT'} />
+                      <StatusBadge status={u.totpEnabled ? 'ENABLED' : 'PENDING'} />
                     </td>
                     <td>
-                      <StatusBadge status={u.isActive !== false ? 'OK' : 'CANCELLED'} />
+                      <StatusBadge status={u.isActive !== false ? 'ACTIVE_USER' : 'INACTIVE_USER'} />
                     </td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       {u.id !== me.id && (
@@ -260,23 +260,22 @@ export default function StaffUsersPage() {
           </label>
           <label className="h-field">
             Rol
-            <select
+            <SearchableSelect
               value={role}
-              onChange={(e) => setRole(e.target.value as StaffProfile['role'])}
-              className="h-input"
-            >
-              {isSuperAdmin ? (
-                <>
-                  <option value="ADMIN">Administrador de edificio(s)</option>
-                  <option value="SUPERADMIN">SuperAdmin (Plataforma SaaS)</option>
-                </>
-              ) : (
-                <>
-                  <option value="ACCOUNTANT">Contador</option>
-                  <option value="GUARD">Guardia de garita</option>
-                </>
-              )}
-            </select>
+              onChange={(val) => setRole(val as StaffProfile['role'])}
+              searchPlaceholder="Buscar rol..."
+              options={
+                isSuperAdmin
+                  ? [
+                      { value: 'ADMIN', label: 'Administrador de edificio(s)' },
+                      { value: 'SUPERADMIN', label: 'SuperAdmin (Plataforma SaaS)' },
+                    ]
+                  : [
+                      { value: 'ACCOUNTANT', label: 'Contador' },
+                      { value: 'GUARD', label: 'Guardia de garita' },
+                    ]
+              }
+            />
           </label>
 
           {role !== 'SUPERADMIN' && (

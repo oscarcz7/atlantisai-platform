@@ -2,10 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Activity, Download } from 'lucide-react';
-import { Money } from '@noah/ui';
-import { ModuleHero } from '../../../components/habitat-ui';
+import { Money, StatusBadge } from '@noah/ui';
+import { DomainTag, ModuleHero } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
 import { downloadCsv } from '../../../lib/export-csv';
+import {
+  getAuditActionLabel,
+  getAuditChannelMeta,
+  getAuditEntityLabel,
+  getLedgerTypeMeta,
+} from '../../../lib/labels';
 
 interface AuditRow {
   id: string;
@@ -73,8 +79,8 @@ export default function AuditPage() {
               <span style={{ fontSize: '13px', color: 'var(--muted-foreground)' }}>Sin datos</span>
             ) : (
               summary.reservationsByStatus.map((r) => (
-                <div key={r.status} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '6px 0', borderTop: '1px solid #f0eee9' }}>
-                  <span>{r.status}</span>
+                <div key={r.status} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', padding: '6px 0', borderTop: '1px solid #f0eee9' }}>
+                  <StatusBadge status={r.status} />
                   <strong>{r.count}</strong>
                 </div>
               ))
@@ -85,14 +91,20 @@ export default function AuditPage() {
             {summary.ledgerByType.length === 0 ? (
               <span style={{ fontSize: '13px', color: 'var(--muted-foreground)' }}>Sin datos</span>
             ) : (
-              summary.ledgerByType.map((l) => (
-                <div key={l.type} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '6px 0', borderTop: '1px solid #f0eee9' }}>
-                  <span>{l.type} ({l.count})</span>
-                  <strong>
-                    <Money cents={l.totalCents} />
-                  </strong>
-                </div>
-              ))
+              summary.ledgerByType.map((l) => {
+                const meta = getLedgerTypeMeta(l.type);
+                return (
+                  <div key={l.type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '13px', padding: '6px 0', borderTop: '1px solid #f0eee9' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <DomainTag compact label={meta.label} bg={meta.bg} color={meta.color} />
+                      <span style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>({l.count})</span>
+                    </span>
+                    <strong>
+                      <Money cents={l.totalCents} />
+                    </strong>
+                  </div>
+                );
+              })
             )}
           </div>
           <div className="h-panel">
@@ -101,8 +113,11 @@ export default function AuditPage() {
               <span style={{ fontSize: '13px', color: 'var(--muted-foreground)' }}>Sin datos</span>
             ) : (
               summary.ticketsByCategory.map((t, idx) => (
-                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '6px 0', borderTop: '1px solid #f0eee9' }}>
-                  <span>{t.category} ({t.status})</span>
+                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '13px', padding: '6px 0', borderTop: '1px solid #f0eee9' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <span>{t.category}</span>
+                    <StatusBadge status={t.status} />
+                  </span>
                   <strong>{t.count}</strong>
                 </div>
               ))
@@ -129,16 +144,23 @@ export default function AuditPage() {
                 </td>
               </tr>
             ) : (
-              logs.map((l) => (
-                <tr key={l.id}>
-                  <td style={{ fontSize: '12.5px', color: 'var(--muted-foreground)' }}>
-                    {new Date(l.createdAt).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })}
-                  </td>
-                  <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{l.action}</td>
-                  <td>{l.entity}</td>
-                  <td>{l.channel}</td>
-                </tr>
-              ))
+              logs.map((l) => {
+                const channelMeta = getAuditChannelMeta(l.channel);
+                return (
+                  <tr key={l.id}>
+                    <td style={{ fontSize: '12.5px', color: 'var(--muted-foreground)' }}>
+                      {new Date(l.createdAt).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })}
+                    </td>
+                    <td style={{ fontWeight: 600 }} title={l.action}>
+                      {getAuditActionLabel(l.action)}
+                    </td>
+                    <td title={l.entity}>{getAuditEntityLabel(l.entity)}</td>
+                    <td>
+                      <DomainTag compact label={channelMeta.label} bg={channelMeta.bg} color={channelMeta.color} title={l.channel} />
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Plus, Trash2, Wrench } from 'lucide-react';
 import { StatusBadge } from '@noah/ui';
-import { HabitatDrawer, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
+import { HabitatDrawer, HabitatToast, ModuleHero, SearchableSelect } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
 
 interface TicketRow {
@@ -156,19 +156,21 @@ export default function IncidentsPage() {
                     </td>
                     <td>
                       {canChangeStatus ? (
-                        <select
+                        <SearchableSelect
+                          variant="compact"
+                          ariaLabel="Estado del ticket"
                           value={t.status}
-                          onChange={(e) => void handleStatusChange(t.id, e.target.value as TicketRow['status'])}
-                          className="h-input"
-                          style={{ padding: '6px 10px', width: 'auto', fontSize: '12.5px' }}
-                        >
-                          <option value="OPEN">Abierto</option>
-                          <option value="IN_PROGRESS">En proceso</option>
-                          <option value="RESOLVED">Resuelto</option>
-                          <option value="CLOSED">Cerrado</option>
-                        </select>
+                          onChange={(val) => void handleStatusChange(t.id, val as TicketRow['status'])}
+                          searchPlaceholder="Buscar estado..."
+                          options={[
+                            { value: 'OPEN', label: 'Abierto' },
+                            { value: 'IN_PROGRESS', label: 'En proceso' },
+                            { value: 'RESOLVED', label: 'Resuelto' },
+                            { value: 'CLOSED', label: 'Cerrado' },
+                          ]}
+                        />
                       ) : (
-                        <StatusBadge status={t.status === 'CLOSED' || t.status === 'RESOLVED' ? 'COMPLETED' : 'IN_REVIEW'} />
+                        <StatusBadge status={t.status} />
                       )}
                     </td>
                     {canChangeStatus && (
@@ -204,12 +206,17 @@ export default function IncidentsPage() {
           </label>
           <label className="h-field">
             Urgencia
-            <select value={urgency} onChange={(e) => setUrgency(e.target.value)} className="h-input">
-              <option value="LOW">Baja</option>
-              <option value="MEDIUM">Media</option>
-              <option value="HIGH">Alta</option>
-              <option value="EMERGENCY">Emergencia</option>
-            </select>
+            <SearchableSelect
+              value={urgency}
+              onChange={setUrgency}
+              searchPlaceholder="Buscar urgencia..."
+              options={[
+                { value: 'LOW', label: 'Baja' },
+                { value: 'MEDIUM', label: 'Media' },
+                { value: 'HIGH', label: 'Alta' },
+                { value: 'EMERGENCY', label: 'Emergencia' },
+              ]}
+            />
           </label>
           <label className="h-field">
             Descripción

@@ -3,8 +3,14 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { authApi, type StaffProfile } from './api/auth';
+import {
+  fetchWithSession,
+  getStoredAccessToken,
+  refreshAccessToken,
+  setStoredAccessToken,
+  subscribeAccessToken,
+} from './api/session';
 
-const API_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:4000';
 const TENANT_STORAGE_KEY = 'noah_tenant_id';
 
 export interface DashboardContextValue {
@@ -54,26 +60,46 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const [tenantId, setTenantIdState] = useState('');
 
   useEffect(() => {
-    const storedToken = sessionStorage.getItem('noah_access_token');
-    if (!storedToken) {
-      router.replace('/login');
-      return;
-    }
-    authApi
-      .me(storedToken)
-      .then((profile) => {
-        setToken(storedToken);
+    const unsubscribe = subscribeAccessToken((next) => {
+      setToken(next);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function bootstrap() {
+      let currentToken = getStoredAccessToken();
+      if (!currentToken) {
+        currentToken = await refreshAccessToken();
+      }
+      if (!currentToken) {
+        if (active) router.replace('/login');
+        return;
+      }
+
+      try {
+        const profile = await authApi.me(currentToken);
+        if (!active) return;
+        const latestToken = getStoredAccessToken() ?? currentToken;
+        setToken(latestToken);
         setMe(profile);
         const savedTenant = readStoredTenant();
         const validSaved = profile.tenants.some((t) => t.id === savedTenant) ? savedTenant : null;
         const activeId = validSaved ?? profile.tenants[0]?.id ?? '';
         setTenantIdState(activeId);
         if (activeId) writeStoredTenant(activeId);
-      })
-      .catch(() => {
-        sessionStorage.removeItem('noah_access_token');
-        router.replace('/login');
-      });
+      } catch {
+        setStoredAccessToken(null);
+        if (active) router.replace('/login');
+      }
+    }
+
+    void bootstrap();
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   const setTenantId = useCallback((id: string) => {
@@ -97,18 +123,14 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       path: string,
       options: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
     ): Promise<T> => {
-      if (!token) throw new Error('Sesión no iniciada');
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        ...(tenantId ? { 'x-tenant-id': tenantId } : {}),
-        ...(options.headers ?? {}),
-      };
-      const res = await fetch(`${API_URL}${path}`, {
+      const activeToken = getStoredAccessToken() ?? token;
+      if (!activeToken) throw new Error('Sesión no iniciada');
+      const res = await fetchWithSession(path, {
         method: options.method ?? 'GET',
-        headers,
-        credentials: 'include',
-        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+        token: activeToken,
+        tenantId: tenantId || undefined,
+        headers: options.headers,
+        body: options.body,
       });
       if (res.status === 204) return undefined as T;
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -122,7 +144,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await authApi.logout().catch(() => undefined);
-    sessionStorage.removeItem('noah_access_token');
+    setStoredAccessToken(null);
     sessionStorage.removeItem(TENANT_STORAGE_KEY);
     localStorage.removeItem(TENANT_STORAGE_KEY);
     router.push('/login');

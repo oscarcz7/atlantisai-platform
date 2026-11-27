@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Building2 } from 'lucide-react';
@@ -13,7 +13,18 @@ export default function LoginPage() {
   const [totpCode, setTotpCode] = useState('');
   const [needsTotp, setNeedsTotp] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const expired = params.get('expired');
+    if (expired === 'idle') {
+      setNotice('Tu sesión se cerró por inactividad. Inicia sesión nuevamente.');
+    } else if (expired) {
+      setNotice('Tu sesión ha expirado. Inicia sesión nuevamente.');
+    }
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -69,6 +80,23 @@ export default function LoginPage() {
         <p style={{ margin: '0 0 22px', fontSize: '13px', color: 'var(--color-text-muted)' }}>
           Plataforma de Gestión Residencial — Acceso interno
         </p>
+
+        {notice && (
+          <div
+            role="status"
+            style={{
+              padding: '10px 12px',
+              marginBottom: '16px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'var(--color-warning-bg, rgba(217, 119, 6, 0.12))',
+              color: 'var(--color-warning, #b45309)',
+              fontSize: '13px',
+              fontWeight: 500,
+            }}
+          >
+            {notice}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '14px' }}>
           <label style={{ display: 'grid', gap: '6px', fontSize: '13px', fontWeight: 500 }}>

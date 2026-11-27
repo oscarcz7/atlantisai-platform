@@ -2,16 +2,20 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { SearchableSelect } from '../../components/habitat-ui';
 import {
   Activity,
   Building2,
   CalendarDays,
+  ChevronRight,
   Clock3,
   LayoutDashboard,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
+  QrCode,
   Receipt,
-  Settings,
   Shield,
   SlidersHorizontal,
   UserCog,
@@ -35,31 +39,51 @@ interface NavItem {
   shortLabel: string;
   icon: LucideIcon;
   roles: StaffProfile['role'][];
+  group: string;
+}
+
+interface NavGroup {
+  title: string;
+  items: NavItem[];
 }
 
 function getNavForRole(role: StaffProfile['role']): NavItem[] {
   if (role === 'SUPERADMIN') {
     return [
-      { href: '/dashboard', label: 'Resumen SaaS', shortLabel: 'Resumen', icon: LayoutDashboard, roles: ['SUPERADMIN'] },
-      { href: '/dashboard/buildings', label: 'Edificios', shortLabel: 'Edificios', icon: Building2, roles: ['SUPERADMIN'] },
-      { href: '/dashboard/users', label: 'Administradores', shortLabel: 'Admins', icon: UserCog, roles: ['SUPERADMIN'] },
+      { href: '/dashboard', label: 'Resumen SaaS', shortLabel: 'Resumen', icon: LayoutDashboard, roles: ['SUPERADMIN'], group: 'Plataforma' },
+      { href: '/dashboard/buildings', label: 'Edificios', shortLabel: 'Edificios', icon: Building2, roles: ['SUPERADMIN'], group: 'Plataforma' },
+      { href: '/dashboard/users', label: 'Administradores', shortLabel: 'Admins', icon: UserCog, roles: ['SUPERADMIN'], group: 'Plataforma' },
     ];
   }
 
   const allOperational: NavItem[] = [
-    { href: '/dashboard', label: 'Resumen', shortLabel: 'Resumen', icon: LayoutDashboard, roles: ['ADMIN', 'ACCOUNTANT'] },
-    { href: '/dashboard/garita', label: 'Garita', shortLabel: 'Garita', icon: Shield, roles: ['ADMIN', 'GUARD'] },
-    { href: '/dashboard/reservations', label: 'Reservas', shortLabel: 'Reservas', icon: CalendarDays, roles: ['ADMIN', 'GUARD'] },
-    { href: '/dashboard/cadastre', label: 'Catastro', shortLabel: 'Catastro', icon: Users, roles: ['ADMIN', 'ACCOUNTANT'] },
-    { href: '/dashboard/billing', label: 'Finanzas', shortLabel: 'Finanzas', icon: Receipt, roles: ['ADMIN', 'ACCOUNTANT'] },
-    { href: '/dashboard/incidents', label: 'Incidencias', shortLabel: 'Tickets', icon: Wrench, roles: ['ADMIN', 'GUARD'] },
-    { href: '/dashboard/config', label: 'Configurador', shortLabel: 'Config', icon: SlidersHorizontal, roles: ['ADMIN'] },
-    { href: '/dashboard/buildings', label: 'Mi Edificio', shortLabel: 'Edificio', icon: Building2, roles: ['ADMIN'] },
-    { href: '/dashboard/users', label: 'Equipo', shortLabel: 'Equipo', icon: UserCog, roles: ['ADMIN'] },
-    { href: '/dashboard/audit', label: 'Informes', shortLabel: 'Informes', icon: Activity, roles: ['ADMIN', 'ACCOUNTANT'] },
+    { href: '/dashboard', label: 'Resumen', shortLabel: 'Resumen', icon: LayoutDashboard, roles: ['ADMIN', 'ACCOUNTANT'], group: 'Operación' },
+    { href: '/dashboard/garita', label: 'Garita', shortLabel: 'Garita', icon: Shield, roles: ['ADMIN', 'GUARD'], group: 'Operación' },
+    { href: '/dashboard/reservations', label: 'Reservas', shortLabel: 'Reservas', icon: CalendarDays, roles: ['ADMIN', 'GUARD'], group: 'Operación' },
+    { href: '/dashboard/access', label: 'Accesos QR', shortLabel: 'QR', icon: QrCode, roles: ['ADMIN', 'GUARD'], group: 'Operación' },
+    { href: '/dashboard/incidents', label: 'Incidencias', shortLabel: 'Tickets', icon: Wrench, roles: ['ADMIN', 'GUARD'], group: 'Operación' },
+    { href: '/dashboard/cadastre', label: 'Catastro', shortLabel: 'Catastro', icon: Users, roles: ['ADMIN', 'ACCOUNTANT'], group: 'Administración' },
+    { href: '/dashboard/billing', label: 'Finanzas', shortLabel: 'Finanzas', icon: Receipt, roles: ['ADMIN', 'ACCOUNTANT'], group: 'Administración' },
+    { href: '/dashboard/audit', label: 'Informes', shortLabel: 'Informes', icon: Activity, roles: ['ADMIN', 'ACCOUNTANT'], group: 'Administración' },
+    { href: '/dashboard/config', label: 'Configurador', shortLabel: 'Config', icon: SlidersHorizontal, roles: ['ADMIN'], group: 'Edificio' },
+    { href: '/dashboard/buildings', label: 'Mi Edificio', shortLabel: 'Edificio', icon: Building2, roles: ['ADMIN'], group: 'Edificio' },
+    { href: '/dashboard/users', label: 'Equipo', shortLabel: 'Equipo', icon: UserCog, roles: ['ADMIN'], group: 'Edificio' },
   ];
 
   return allOperational.filter((item) => item.roles.includes(role));
+}
+
+function groupNavItems(items: NavItem[]): NavGroup[] {
+  const map = new Map<string, NavItem[]>();
+  for (const item of items) {
+    const bucket = map.get(item.group) ?? [];
+    bucket.push(item);
+    map.set(item.group, bucket);
+  }
+  return Array.from(map.entries()).map(([title, groupItems]) => ({
+    title,
+    items: groupItems,
+  }));
 }
 
 function getInitials(name: string): string {
@@ -71,86 +95,150 @@ function getInitials(name: string): string {
 function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { me, tenantId, setTenantId, logout } = useDashboard();
+  const [collapsed, setCollapsed] = useState(false);
+  const [hoverExpanded, setHoverExpanded] = useState(false);
 
   const visibleItems = getNavForRole(me.role);
+  const navGroups = groupNavItems(visibleItems);
+  const currentItem = visibleItems.find((item) => item.href === pathname);
   const isSuperAdmin = me.role === 'SUPERADMIN';
+  const homeHref = me.role === 'GUARD' ? '/dashboard/garita' : '/dashboard';
   const activeTenantName = me.tenants.find((t) => t.id === tenantId)?.name ?? 'Plataforma NOAH';
 
+  const isFloatingOpen = collapsed && hoverExpanded;
+  const showLabels = !collapsed || hoverExpanded;
+
   return (
-    <div className="dashboard-shell">
-      <aside className="sidebar" aria-label="Navegación principal">
-        <Link
-          className="brand-mark"
-          href={me.role === 'GUARD' ? '/dashboard/garita' : '/dashboard'}
-          aria-label="Inicio de NOAH"
-          title="NOAH"
+    <div className={`dashboard-shell ${collapsed ? 'sidebar-collapsed' : ''}`}>
+      <div className="sidebar-slot">
+        <aside
+          className={`sidebar ${isFloatingOpen ? 'sidebar-hover-open' : ''}`}
+          aria-label="Navegación principal"
+          onMouseEnter={() => {
+            if (collapsed) setHoverExpanded(true);
+          }}
+          onMouseLeave={() => {
+            if (hoverExpanded) setHoverExpanded(false);
+          }}
         >
-          <Building2 size={20} strokeWidth={2.3} />
-        </Link>
-
-        <nav className="side-nav" aria-label="Secciones">
-          {visibleItems.map((item) => {
-            const Icon = item.icon;
-            const active = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                title={item.label}
-                aria-label={item.label}
-                aria-current={active ? 'page' : undefined}
-                className={`side-link ${active ? 'selected' : ''}`}
-              >
-                <Icon size={18} strokeWidth={1.85} />
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="sidebar-bottom">
-          {me.role === 'ADMIN' && (
-            <Link href="/dashboard/config" className="icon-button" title="Configurador" aria-label="Configurador">
-              <Settings size={18} />
+          <div className="sidebar-header">
+            <Link
+              className="sidebar-brand"
+              href={homeHref}
+              aria-label="Inicio de NOAH"
+              title="NOAH"
+            >
+              <span className="brand-mark">
+                <Building2 size={19} strokeWidth={2.3} />
+              </span>
+              {showLabels && (
+                <span className="sidebar-brand-name">
+                  noah<span className="brand-period">.</span>
+                </span>
+              )}
             </Link>
-          )}
-          <button
-            type="button"
-            className="icon-button"
-            onClick={() => void logout()}
-            title="Cerrar sesión"
-            aria-label="Cerrar sesión"
-          >
-            <LogOut size={18} />
-          </button>
-        </div>
-      </aside>
+
+            {showLabels && (
+              <button
+                type="button"
+                className="sidebar-toggle"
+                onClick={() => {
+                  if (collapsed) {
+                    setCollapsed(false);
+                    setHoverExpanded(false);
+                  } else {
+                    setCollapsed(true);
+                    setHoverExpanded(false);
+                  }
+                }}
+                title={collapsed ? 'Fijar menú expandido' : 'Colapsar menú lateral'}
+                aria-label={collapsed ? 'Fijar menú expandido' : 'Colapsar menú lateral'}
+              >
+                {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+              </button>
+            )}
+          </div>
+
+          <nav className="side-nav" aria-label="Secciones">
+            {navGroups.map((group, groupIdx) => (
+              <div key={group.title} className="side-group">
+                {showLabels ? (
+                  <div className="side-group-label">{group.title}</div>
+                ) : (
+                  groupIdx > 0 && <div className="side-group-divider" aria-hidden="true" />
+                )}
+                <div className="side-group-items">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const active = pathname === item.href;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        title={!showLabels ? item.label : undefined}
+                        aria-label={item.label}
+                        aria-current={active ? 'page' : undefined}
+                        className={`side-link ${active ? 'selected' : ''}`}
+                      >
+                        <Icon size={17} strokeWidth={1.9} />
+                        {showLabels && <span className="side-link-label">{item.label}</span>}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </nav>
+
+          <div className="sidebar-bottom">
+            {!showLabels && (
+              <button
+                type="button"
+                className="side-link side-link-muted"
+                onClick={() => {
+                  setCollapsed(false);
+                  setHoverExpanded(false);
+                }}
+                title="Expandir menú lateral"
+                aria-label="Expandir menú lateral"
+              >
+                <PanelLeftOpen size={17} />
+              </button>
+            )}
+            <button
+              type="button"
+              className="side-link side-link-muted"
+              onClick={() => void logout()}
+              title="Cerrar sesión"
+              aria-label="Cerrar sesión"
+            >
+              <LogOut size={17} />
+              {showLabels && <span className="side-link-label">Cerrar sesión</span>}
+            </button>
+          </div>
+        </aside>
+      </div>
 
       <div className="dashboard-main">
         <header className="topbar">
-          <Link href={me.role === 'GUARD' ? '/dashboard/garita' : '/dashboard'} className="brand">
-            <span className="brand-symbol">
-              <Building2 size={19} />
-            </span>
-            <span>
-              noah<span className="brand-period">.</span>
-            </span>
-          </Link>
+          <div className="topbar-left">
+            <Link href={homeHref} className="brand mobile-brand">
+              <span className="brand-symbol">
+                <Building2 size={18} />
+              </span>
+              <span>
+                noah<span className="brand-period">.</span>
+              </span>
+            </Link>
 
-          <nav className="top-nav" aria-label="Accesos directos">
-            {visibleItems.map((item) => {
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={active ? 'page' : undefined}
-                  className={active ? 'top-nav-active' : ''}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
+            {currentItem && (
+              <div className="topbar-breadcrumb" aria-label="Ubicación actual">
+                <span>{currentItem.group}</span>
+                <ChevronRight size={13} />
+                <strong>{currentItem.label}</strong>
+              </div>
+            )}
+          </div>
 
           <div className="topbar-right">
             {!isSuperAdmin && me.tenants.length > 0 && (
@@ -159,17 +247,18 @@ function Shell({ children }: { children: ReactNode }) {
                 {me.tenants.length === 1 ? (
                   <span style={{ fontWeight: 600, fontSize: '12.5px' }}>{me.tenants[0]!.name}</span>
                 ) : (
-                  <select
-                    aria-label="Edificio activo"
+                  <SearchableSelect
+                    variant="bare"
+                    ariaLabel="Edificio activo"
                     value={tenantId}
-                    onChange={(e) => setTenantId(e.target.value)}
-                  >
-                    {me.tenants.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setTenantId}
+                    searchPlaceholder="Buscar edificio..."
+                    options={me.tenants.map((t) => ({
+                      value: t.id,
+                      label: t.name,
+                      keywords: t.code,
+                    }))}
+                  />
                 )}
               </label>
             )}

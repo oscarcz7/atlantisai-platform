@@ -35,7 +35,11 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           docker build -f apps/api/Dockerfile -t "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/noah/api:${TAG}" .
           docker push "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/noah/api:${TAG}"
-          docker build -f apps/web/Dockerfile -t "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/noah/web:${TAG}" .
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL="${{ vars.NEXT_PUBLIC_API_URL_PRD }}" \
+            --build-arg NEXT_PUBLIC_SITE_URL="${{ vars.NEXT_PUBLIC_SITE_URL_PRD }}" \
+            -f apps/web/Dockerfile \
+            -t "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/noah/web:${TAG}" .
           docker push "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/noah/web:${TAG}"
 
       - name: Run database migrations (Cloud Run Job)
@@ -46,7 +50,7 @@ jobs:
             --region "${GCP_REGION}" \
             --image "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/noah/api:${TAG}" \
             --command "npx" \
-            --args "prisma,migrate,deploy,--schema=prisma/schema.prisma"
+            --args "--yes,prisma@5.22.0,migrate,deploy,--schema=prisma/schema.prisma"
           gcloud run jobs execute noah-api-migrate \
             --project "${GCP_PROJECT}" \
             --region "${GCP_REGION}" \

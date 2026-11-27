@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Check, FileSpreadsheet, Plus, Receipt, X } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
-import { HabitatDrawer, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
+import { HabitatDrawer, HabitatToast, ModuleHero, SearchableSelect } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
 
 interface PaymentProofRow {
@@ -280,13 +280,16 @@ export default function BillingPage() {
         <form onSubmit={handleSubmitProof} style={{ display: 'grid', gap: '14px' }}>
           <label className="h-field">
             Unidad
-            <select value={unitId} onChange={(e) => setUnitId(e.target.value)} className="h-input">
-              {units.map((u) => (
-                <option key={u.id} value={u.id}>
-                  Depto. {u.number}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={unitId}
+              onChange={setUnitId}
+              searchPlaceholder="Buscar unidad..."
+              options={units.map((u) => ({
+                value: u.id,
+                label: `Depto. ${u.number}`,
+                keywords: u.number,
+              }))}
+            />
           </label>
           <label className="h-field">
             Banco

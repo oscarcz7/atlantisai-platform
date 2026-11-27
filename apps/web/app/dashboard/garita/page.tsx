@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Car, Clock, LogIn, LogOut, Plus, Shield } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
-import { HabitatDrawer, ModuleHero } from '../../../components/habitat-ui';
+import { HabitatDrawer, ModuleHero, SearchableSelect } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
 
 interface ParkingSpot {
@@ -140,7 +140,7 @@ export default function GaritaConsolePage() {
                 <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '16px' }}>
                   <Car size={16} /> Puesto #{s.spot}
                 </strong>
-                <StatusBadge status={s.occupied ? 'PENDING_PAYMENT' : 'OK'} />
+                <StatusBadge status={s.occupied ? 'OCCUPIED' : 'AVAILABLE'} />
               </div>
               <p style={{ margin: '4px 0 0', fontSize: '15px', fontWeight: s.occupied ? 600 : 400, color: s.occupied ? 'var(--foreground)' : 'var(--muted-foreground)' }}>
                 {s.occupied ? `${s.visitorName ?? 'Visita'} · ${s.plate ?? 'Sin placa'}` : 'Disponible'}
@@ -227,13 +227,17 @@ export default function GaritaConsolePage() {
         <form onSubmit={handleRegister} style={{ display: 'grid', gap: '14px' }}>
           <label className="h-field">
             Unidad anfitriona
-            <select value={hostUnitId} onChange={(e) => setHostUnitId(e.target.value)} className="h-input" style={{ minHeight: '44px' }}>
-              {units.map((u) => (
-                <option key={u.id} value={u.id}>
-                  Depto. {u.number}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={hostUnitId}
+              onChange={setHostUnitId}
+              searchPlaceholder="Buscar unidad..."
+              style={{ minHeight: '44px' }}
+              options={units.map((u) => ({
+                value: u.id,
+                label: `Depto. ${u.number}`,
+                keywords: u.number,
+              }))}
+            />
           </label>
           <label className="h-field">
             Nombre del visitante

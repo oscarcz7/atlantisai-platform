@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Building2, Copy, Pencil, Plus, Trash2, UserCheck } from 'lucide-react';
-import { HabitatDrawer, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
+import { HabitatDrawer, HabitatToast, ModuleHero, SearchableSelect } from '../../../components/habitat-ui';
 import { authApi, type StaffProfile } from '../../../lib/api/auth';
 import { useDashboard } from '../../../lib/dashboard-context';
+import { formatDayRange } from '../../../lib/labels';
 
 interface BankAccount {
   bank: string;
@@ -408,7 +409,7 @@ export default function BuildingsPage() {
                 <div>
                   <div style={{ color: 'var(--muted-foreground)', fontSize: '11px', marginBottom: '2px' }}>Horarios de oficina</div>
                   <div>
-                    Presencial: {t.officeHours?.inPerson?.days ?? '—'} {t.officeHours?.inPerson?.open ?? ''}–{t.officeHours?.inPerson?.close ?? ''}
+                    Presencial: {formatDayRange(t.officeHours?.inPerson?.days)} {t.officeHours?.inPerson?.open ?? ''}–{t.officeHours?.inPerson?.close ?? ''}
                   </div>
                   <div style={{ color: 'var(--muted-foreground)', fontSize: '12px' }}>
                     WhatsApp: {t.officeHours?.phoneWhatsapp?.open ?? ''}–{t.officeHours?.phoneWhatsapp?.close ?? ''}
@@ -631,14 +632,15 @@ export default function BuildingsPage() {
                   </label>
                   <label className="h-field">
                     Tipo de cuenta
-                    <select
+                    <SearchableSelect
                       value={acc.accountType}
-                      onChange={(e) => updateBankAccount(index, { accountType: e.target.value })}
-                      className="h-input"
-                    >
-                      <option value="Corriente">Corriente</option>
-                      <option value="Ahorros">Ahorros</option>
-                    </select>
+                      onChange={(val) => updateBankAccount(index, { accountType: val })}
+                      searchPlaceholder="Buscar tipo..."
+                      options={[
+                        { value: 'Corriente', label: 'Corriente' },
+                        { value: 'Ahorros', label: 'Ahorros' },
+                      ]}
+                    />
                   </label>
                   <label className="h-field">
                     Número de cuenta
@@ -651,16 +653,17 @@ export default function BuildingsPage() {
                   </label>
                   <label className="h-field">
                     Concepto / uso
-                    <select
+                    <SearchableSelect
                       value={acc.purpose ?? 'General'}
-                      onChange={(e) => updateBankAccount(index, { purpose: e.target.value })}
-                      className="h-input"
-                    >
-                      <option value="General">General (todos los pagos)</option>
-                      <option value="Alícuotas">Alícuotas mensuales</option>
-                      <option value="Garantías">Fondo de garantías</option>
-                      <option value="Áreas comunales">Limpieza / áreas comunales</option>
-                    </select>
+                      onChange={(val) => updateBankAccount(index, { purpose: val })}
+                      searchPlaceholder="Buscar concepto..."
+                      options={[
+                        { value: 'General', label: 'General (todos los pagos)' },
+                        { value: 'Alícuotas', label: 'Alícuotas mensuales' },
+                        { value: 'Garantías', label: 'Fondo de garantías' },
+                        { value: 'Áreas comunales', label: 'Limpieza / áreas comunales' },
+                      ]}
+                    />
                   </label>
                   <label className="h-field">
                     Titular / Condominio
@@ -706,13 +709,16 @@ export default function BuildingsPage() {
         <form onSubmit={handleClone} style={{ display: 'grid', gap: '14px' }}>
           <label className="h-field">
             Edificio origen
-            <select value={cloneSourceId} onChange={(e) => setCloneSourceId(e.target.value)} className="h-input">
-              {tenants.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.code})
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={cloneSourceId}
+              onChange={setCloneSourceId}
+              searchPlaceholder="Buscar edificio..."
+              options={tenants.map((t) => ({
+                value: t.id,
+                label: `${t.name} (${t.code})`,
+                keywords: t.code,
+              }))}
+            />
           </label>
           <label className="h-field">
             Código del nuevo edificio

@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { CalendarDays, Check, Plus, Sparkles } from 'lucide-react';
+import { CalendarDays, Check, Pencil, Plus, QrCode, Sparkles } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
-import { HabitatDrawer, HabitatToast, ModuleHero } from '../../../components/habitat-ui';
+import { HabitatDrawer, HabitatToast, ModuleHero, SearchableSelect } from '../../../components/habitat-ui';
+import { QrTicketDrawer } from '../../../components/qr-ticket-drawer';
 import { useDashboard } from '../../../lib/dashboard-context';
 
 interface ReservationRow {
@@ -13,9 +14,33 @@ interface ReservationRow {
   declaredAttendees: number;
   status: string;
   totalCents: number;
-  unit?: { number: string } | null;
-  person?: { fullName: string } | null;
+  unit?: { id: string; number: string } | null;
+  person?: { id: string; fullName: string; waPhone?: string | null } | null;
   amenities: Array<{ amenity: { id: string; name: string } }>;
+  credentials?: Array<{ id: string; employeeNo: string; code: string; syncStatus: string }>;
+}
+
+function toEcuadorDateInput(iso: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Guayaquil',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(iso));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '01';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+function toEcuadorTimeInput(iso: string): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Guayaquil',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(iso));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '00';
+  const hour = get('hour') === '24' ? '00' : get('hour');
+  return `${hour}:${get('minute')}`;
 }
 
 interface AmenityOption {
@@ -24,14 +49,41 @@ interface AmenityOption {
   mode: string;
 }
 
+interface UnitOccupancyOption {
+  id: string;
+  personId: string;
+  role: string;
+  validFrom: string;
+  validTo: string | null;
+  person: {
+    id: string;
+    fullName: string;
+    waPhone: string;
+  };
+}
+
 interface UnitOption {
   id: string;
   number: string;
+  occupancies: UnitOccupancyOption[];
 }
 
-interface PersonOption {
-  id: string;
-  fullName: string;
+const OCCUPANCY_ROLE_LABELS: Record<string, string> = {
+  OWNER_RESIDENT: 'Propietario residente',
+  OWNER_LANDLORD: 'Propietario arrendador',
+  LONG_TERM_TENANT: 'Arrendatario fijo',
+  AIRBNB_HOST: 'Anfitrión renta corta',
+  AIRBNB_GUEST: 'Huésped renta corta',
+};
+
+function getActiveOccupancies(unit: UnitOption | undefined): UnitOccupancyOption[] {
+  if (!unit) return [];
+  const now = Date.now();
+  return unit.occupancies.filter((o) => {
+    const from = new Date(o.validFrom).getTime();
+    const to = o.validTo ? new Date(o.validTo).getTime() : Infinity;
+    return from <= now && now <= to;
+  });
 }
 
 interface SimulationResult {
@@ -48,8 +100,9 @@ export default function ReservationsPage() {
   const [rows, setRows] = useState<ReservationRow[]>([]);
   const [amenities, setAmenities] = useState<AmenityOption[]>([]);
   const [units, setUnits] = useState<UnitOption[]>([]);
-  const [persons, setPersons] = useState<PersonOption[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editingReservationId, setEditingReservationId] = useState<string | null>(null);
+  const [ticketReservationId, setTicketReservationId] = useState<string | null>(null);
 
   const [selectedAmenityIds, setSelectedAmenityIds] = useState<string[]>([]);
   const [unitId, setUnitId] = useState('');
@@ -70,19 +123,33 @@ export default function ReservationsPage() {
 
   const loadData = useCallback(async () => {
     if (!tenantId) return;
-    const [res, am, un, pe] = await Promise.all([
+    const [res, am, un] = await Promise.all([
       apiFetch<ReservationRow[]>('/reservations'),
       apiFetch<AmenityOption[]>('/catalog/amenities'),
       apiFetch<UnitOption[]>('/cadastre/units'),
-      apiFetch<PersonOption[]>('/cadastre/persons'),
     ]);
     setRows(res);
     setAmenities(am.filter((a) => a.mode !== 'FREE_USE'));
     setUnits(un);
-    setPersons(pe);
-    if (!unitId && un[0]) setUnitId(un[0].id);
-    if (!personId && pe[0]) setPersonId(pe[0].id);
-  }, [apiFetch, tenantId, unitId, personId]);
+    if (!unitId && un.length > 0) {
+      const firstWithOccupant = un.find((u) => getActiveOccupancies(u).length > 0) ?? un[0]!;
+      setUnitId(firstWithOccupant.id);
+      const activeOccs = getActiveOccupancies(firstWithOccupant);
+      setPersonId(activeOccs[0]?.personId ?? '');
+    }
+  }, [apiFetch, tenantId, unitId]);
+
+  const selectedUnit = units.find((u) => u.id === unitId);
+  const activeOccupancies = getActiveOccupancies(selectedUnit);
+  const selectedOccupancy = activeOccupancies.find((o) => o.personId === personId);
+
+  function handleUnitChange(nextUnitId: string) {
+    setUnitId(nextUnitId);
+    setSimulation(null);
+    const nextUnit = units.find((u) => u.id === nextUnitId);
+    const nextActive = getActiveOccupancies(nextUnit);
+    setPersonId(nextActive[0]?.personId ?? '');
+  }
 
   useEffect(() => {
     void loadData();
@@ -95,6 +162,27 @@ export default function ReservationsPage() {
     );
   }
 
+  function openNewDrawer() {
+    setEditingReservationId(null);
+    setError(null);
+    setSimulation(null);
+    setDrawerOpen(true);
+  }
+
+  function openEditDrawer(row: ReservationRow) {
+    setEditingReservationId(row.id);
+    if (row.unit?.id) setUnitId(row.unit.id);
+    if (row.person?.id) setPersonId(row.person.id);
+    setSelectedAmenityIds(row.amenities.map((a) => a.amenity.id));
+    setDate(toEcuadorDateInput(row.startsAt));
+    setStartTime(toEcuadorTimeInput(row.startsAt));
+    setEndTime(toEcuadorTimeInput(row.endsAt));
+    setAttendees(String(row.declaredAttendees));
+    setError(null);
+    setSimulation(null);
+    setDrawerOpen(true);
+  }
+
   function buildPayload() {
     return {
       unitId,
@@ -103,6 +191,7 @@ export default function ReservationsPage() {
       startsAt: `${date}T${startTime}:00-05:00`,
       endsAt: `${date}T${endTime}:00-05:00`,
       declaredAttendees: Number(attendees),
+      ...(editingReservationId ? { excludeReservationId: editingReservationId } : {}),
     };
   }
 
@@ -119,21 +208,53 @@ export default function ReservationsPage() {
     }
   }
 
-  async function handleCreate(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     try {
-      await apiFetch('/reservations', {
+      if (editingReservationId) {
+        const updated = await apiFetch<{ id: string; status: string }>(
+          `/reservations/${editingReservationId}`,
+          {
+            method: 'PATCH',
+            body: {
+              amenityIds: selectedAmenityIds,
+              startsAt: `${date}T${startTime}:00-05:00`,
+              endsAt: `${date}T${endTime}:00-05:00`,
+              declaredAttendees: Number(attendees),
+            },
+          },
+        );
+        setDrawerOpen(false);
+        setEditingReservationId(null);
+        setSimulation(null);
+        setToast(
+          updated.status === 'CONFIRMED'
+            ? 'Reserva actualizada y QR re-sincronizado con Hikvision.'
+            : 'Reserva actualizada correctamente.',
+        );
+        await loadData();
+        return;
+      }
+
+      const created = await apiFetch<{ id: string; status: string }>('/reservations', {
         method: 'POST',
         headers: { 'Idempotency-Key': `ui-${Date.now()}` },
         body: buildPayload(),
       });
       setDrawerOpen(false);
       setSimulation(null);
-      setToast('Reserva registrada correctamente.');
+      setToast(
+        created.status === 'CONFIRMED'
+          ? 'Reserva confirmada y ticket QR generado.'
+          : 'Reserva registrada. El ticket QR se activará al aprobar el pago.',
+      );
       await loadData();
+      if (created.status === 'CONFIRMED') {
+        setTicketReservationId(created.id);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo crear la reserva.');
+      setError(err instanceof Error ? err.message : 'No se pudo guardar la reserva.');
     }
   }
 
@@ -160,11 +281,7 @@ export default function ReservationsPage() {
             <button
               type="button"
               className="h-btn-dark"
-              onClick={() => {
-                setError(null);
-                setSimulation(null);
-                setDrawerOpen(true);
-              }}
+              onClick={openNewDrawer}
             >
               <Plus size={15} /> Nueva reserva
             </button>
@@ -232,11 +349,31 @@ export default function ReservationsPage() {
                   </td>
                   {canManage && (
                     <td style={{ textAlign: 'right' }}>
-                      {['CONFIRMED', 'PENDING_PAYMENT', 'IN_REVIEW'].includes(r.status) && (
-                        <button type="button" className="h-btn-danger h-btn-sm" onClick={() => void handleCancel(r.id)}>
-                          Cancelar
-                        </button>
-                      )}
+                      <div style={{ display: 'inline-flex', gap: '6px', justifyContent: 'flex-end' }}>
+                        {r.status === 'CONFIRMED' && (
+                          <button
+                            type="button"
+                            className="h-btn-outline h-btn-sm"
+                            onClick={() => setTicketReservationId(r.id)}
+                          >
+                            <QrCode size={13} /> Ticket QR
+                          </button>
+                        )}
+                        {['CONFIRMED', 'PENDING_PAYMENT', 'IN_REVIEW'].includes(r.status) && r.unit && (
+                          <button
+                            type="button"
+                            className="h-btn-outline h-btn-sm"
+                            onClick={() => openEditDrawer(r)}
+                          >
+                            <Pencil size={13} /> Editar
+                          </button>
+                        )}
+                        {['CONFIRMED', 'PENDING_PAYMENT', 'IN_REVIEW'].includes(r.status) && (
+                          <button type="button" className="h-btn-danger h-btn-sm" onClick={() => void handleCancel(r.id)}>
+                            Cancelar
+                          </button>
+                        )}
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -248,31 +385,73 @@ export default function ReservationsPage() {
 
       <HabitatDrawer
         open={drawerOpen}
-        title="Nueva reserva"
-        subtitle="Simula contra el motor de reglas (mora, garantía, rol, aforo y combos) antes de confirmar."
-        onClose={() => setDrawerOpen(false)}
+        title={editingReservationId ? 'Editar reserva' : 'Nueva reserva'}
+        subtitle={
+          editingReservationId
+            ? 'Modifica espacio, fecha, horario o asistentes. Si está confirmada, el QR se actualiza automáticamente en Hikvision.'
+            : 'Simula contra el motor de reglas (mora, garantía, rol, aforo y combos) antes de confirmar.'
+        }
+        onClose={() => {
+          setDrawerOpen(false);
+          setEditingReservationId(null);
+        }}
         width={480}
       >
-        <form onSubmit={handleCreate} style={{ display: 'grid', gap: '14px' }}>
+        <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '14px' }}>
           <label className="h-field">
             Unidad
-            <select value={unitId} onChange={(e) => { setUnitId(e.target.value); setSimulation(null); }} className="h-input">
-              {units.map((u) => (
-                <option key={u.id} value={u.id}>
-                  Depto. {u.number}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={unitId}
+              disabled={Boolean(editingReservationId)}
+              onChange={(val) => handleUnitChange(val)}
+              searchPlaceholder="Buscar unidad..."
+              options={units.map((u) => {
+                const count = getActiveOccupancies(u).length;
+                return {
+                  value: u.id,
+                  label: `Depto. ${u.number} ${count === 0 ? '(sin residente activo)' : `(${count})`}`,
+                  keywords: u.number,
+                };
+              })}
+            />
           </label>
           <label className="h-field">
-            Residente / Solicitante
-            <select value={personId} onChange={(e) => { setPersonId(e.target.value); setSimulation(null); }} className="h-input">
-              {persons.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.fullName}
-                </option>
-              ))}
-            </select>
+            Residente / Solicitante (vinculado a la unidad)
+            {activeOccupancies.length === 0 ? (
+              <div
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  background: '#fae9e6',
+                  color: '#b7544d',
+                  fontSize: '12.5px',
+                }}
+              >
+                Esta unidad no tiene ocupantes activos en Catastro. Asigna un residente primero o selecciona otra unidad.
+              </div>
+            ) : (
+              <>
+                <SearchableSelect
+                  value={personId}
+                  disabled={Boolean(editingReservationId)}
+                  onChange={(val) => {
+                    setPersonId(val);
+                    setSimulation(null);
+                  }}
+                  searchPlaceholder="Buscar residente o teléfono..."
+                  options={activeOccupancies.map((occ) => ({
+                    value: occ.personId,
+                    label: `${occ.person.fullName} · ${OCCUPANCY_ROLE_LABELS[occ.role] ?? occ.role}`,
+                    keywords: occ.person.waPhone,
+                  }))}
+                />
+                {selectedOccupancy && (
+                  <span style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>
+                    WhatsApp vinculado: <strong>{selectedOccupancy.person.waPhone}</strong>
+                  </span>
+                )}
+              </>
+            )}
           </label>
           <div className="h-field">
             <span>Área(s) comunal(es) (puedes marcar combo)</span>
@@ -304,7 +483,12 @@ export default function ReservationsPage() {
             <input type="number" min={1} value={attendees} onChange={(e) => { setAttendees(e.target.value); setSimulation(null); }} className="h-input" />
           </label>
 
-          <button type="button" className="h-btn-outline" onClick={() => void handleSimulate()} disabled={selectedAmenityIds.length === 0}>
+          <button
+            type="button"
+            className="h-btn-outline"
+            onClick={() => void handleSimulate()}
+            disabled={selectedAmenityIds.length === 0 || !personId}
+          >
             <Sparkles size={14} /> Simular reglas y cobros
           </button>
 
@@ -352,11 +536,19 @@ export default function ReservationsPage() {
               Cancelar
             </button>
             <button type="submit" disabled={!simulation?.ok} className="h-btn-dark">
-              Confirmar reserva
+              {editingReservationId ? 'Guardar cambios' : 'Confirmar reserva'}
             </button>
           </div>
         </form>
       </HabitatDrawer>
+
+      <QrTicketDrawer
+        reservationId={ticketReservationId}
+        onClose={() => {
+          setTicketReservationId(null);
+          void loadData();
+        }}
+      />
     </section>
   );
 }

@@ -29,10 +29,13 @@ interface ExpressLikeRes {
 const REFRESH_COOKIE = 'noah_refresh';
 
 function cookieOptions() {
+  const sameSiteEnv = (process.env['COOKIE_SAME_SITE'] ?? 'strict').toLowerCase();
+  const sameSite: 'strict' | 'lax' | 'none' =
+    sameSiteEnv === 'none' || sameSiteEnv === 'lax' ? sameSiteEnv : 'strict';
   return {
     httpOnly: true,
-    secure: process.env['NODE_ENV'] === 'production',
-    sameSite: 'strict' as const,
+    secure: process.env['NODE_ENV'] === 'production' || sameSite === 'none',
+    sameSite,
     path: '/auth',
     maxAge: 7 * 24 * 60 * 60 * 1000,
   };

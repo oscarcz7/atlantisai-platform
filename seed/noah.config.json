@@ -1,5 +1,5 @@
 {
-  "_comment": "Configuración semilla del Edificio NOAH según el Manual de Uso de Áreas Comunales. Los campos _pending remiten a docs/pending-decisions.md. Montos en centavos USD.",
+  "_comment": "Configuración del Edificio NOAH conciliada entre el Manual de Uso de Áreas Comunales y la exportación de Rezzy (bienes_compartidos.pdf y movimientos_privados.pdf). Montos en centavos USD.",
   "tenant": {
     "code": "noah",
     "name": "Edificio NOAH",
@@ -8,10 +8,10 @@
       "company": "Grupo Baluarte",
       "contactName": "Arq. Damián Álvarez",
       "phone": "+593984555922",
-      "email": "Edificionoah2@gmail.com"
+      "email": "edificio.noah2025@gmail.com"
     },
     "security": {
-      "company": "FISSEG",
+      "company": "FISSEG CIA. LTDA.",
       "whatsapp": "+593959846694"
     },
     "officeHours": {
@@ -29,7 +29,7 @@
     }
   },
   "settings": {
-    "monthlyFeePerSqmCents": 300,
+    "monthlyFeePerSqmCents": 500,
     "depositRequiredCents": 20000,
     "arrearsToleranceMonths": 2,
     "paymentProofDeadlineMinutes": 240,
@@ -42,39 +42,45 @@
     "cancellationPolicy": {
       "minHoursBefore": 24,
       "cleaningFeeHandling": "NON_REFUNDABLE"
-    },
-    "_pending": {
-      "arrearsToleranceMonths": "P-03",
-      "paymentProofDeadlineMinutes": "P-11",
-      "entryMarginMinutes": "P-16",
-      "cancellationPolicy": "P-14 (plazo mínimo; limpieza confirmada NO reembolsable por Manual §4.6)"
     }
   },
   "unitTypes": [
     {
-      "code": "STUDIO",
-      "name": "Estudio (1 dormitorio)",
+      "code": "ESTUDIO",
+      "name": "Estudio",
       "bedrooms": 1,
       "includedGuests": 2
     },
     {
       "code": "SUITE",
-      "name": "Suite (2 dormitorios)",
+      "name": "Suite",
+      "bedrooms": 1,
+      "includedGuests": 2
+    },
+    {
+      "code": "2D",
+      "name": "Departamento 2D",
       "bedrooms": 2,
       "includedGuests": 3
     },
     {
-      "code": "APARTMENT",
-      "name": "Departamento (3 dormitorios)",
+      "code": "3D",
+      "name": "Departamento 3D",
       "bedrooms": 3,
       "includedGuests": 5
+    },
+    {
+      "code": "LOCAL",
+      "name": "Local Comercial",
+      "bedrooms": 0,
+      "includedGuests": 0
     }
   ],
   "amenities": [
     {
       "code": "COWORKING",
-      "name": "Zona Coworking",
-      "capacity": 20,
+      "name": "Coworking",
+      "capacity": 24,
       "maxDurationMinutes": 240,
       "frequency": {
         "period": "DAY",
@@ -88,7 +94,7 @@
       "hasReader": true,
       "schedule": {
         "all": {
-          "open": "07:00",
+          "open": "08:00",
           "close": "23:00"
         }
       },
@@ -97,23 +103,19 @@
         "LONG_TERM_TENANT",
         "AIRBNB_HOST",
         "AIRBNB_GUEST"
-      ],
-      "_pending": {
-        "frequency": "P-17",
-        "requiresDeposit": "P-01"
-      }
+      ]
     },
     {
       "code": "MEETING_ROOMS",
-      "name": "Salas de reuniones",
+      "name": "Sala de Reuniones Coworking",
       "capacity": 12,
       "maxDurationMinutes": 240,
       "frequency": {
         "period": "WEEK",
         "max": 4
       },
-      "mode": "SHARED",
-      "advancePolicy": "SHORT_NOTICE_ALLOWED",
+      "mode": "EXCLUSIVE",
+      "advancePolicy": "GENERAL",
       "appliesGuestQuota": false,
       "requiresDeposit": false,
       "cleaningFeeCents": 0,
@@ -129,10 +131,7 @@
         "LONG_TERM_TENANT",
         "AIRBNB_HOST",
         "AIRBNB_GUEST"
-      ],
-      "_pending": {
-        "mode": "P-05"
-      }
+      ]
     },
     {
       "code": "GYM",
@@ -160,11 +159,7 @@
         "LONG_TERM_TENANT",
         "AIRBNB_HOST",
         "AIRBNB_GUEST"
-      ],
-      "_pending": {
-        "frequency": "P-17",
-        "requiresDeposit": "P-01"
-      }
+      ]
     },
     {
       "code": "PET_ZONE",
@@ -184,15 +179,12 @@
         "LONG_TERM_TENANT",
         "AIRBNB_HOST",
         "AIRBNB_GUEST"
-      ],
-      "_pending": {
-        "mode": "P-04"
-      }
+      ]
     },
     {
-      "code": "WET_AREA",
-      "name": "Área Húmeda (Piscina)",
-      "capacity": 20,
+      "code": "HIDROMASAJE_1",
+      "name": "Hidromasaje 1",
+      "capacity": 6,
       "maxDurationMinutes": 180,
       "frequency": {
         "period": "WEEK",
@@ -206,8 +198,8 @@
       "hasReader": true,
       "schedule": {
         "all": {
-          "open": "08:00",
-          "close": "22:00"
+          "open": "07:00",
+          "close": "23:00"
         }
       },
       "allowedRoles": [
@@ -215,11 +207,35 @@
         "LONG_TERM_TENANT",
         "AIRBNB_HOST",
         "AIRBNB_GUEST"
-      ],
-      "_pending": {
-        "schedule": "P-06",
-        "requiresDeposit": "P-01"
-      }
+      ]
+    },
+    {
+      "code": "HIDROMASAJE_2",
+      "name": "Hidromasaje 2",
+      "capacity": 6,
+      "maxDurationMinutes": 180,
+      "frequency": {
+        "period": "WEEK",
+        "max": 3
+      },
+      "mode": "SHARED",
+      "advancePolicy": "SHORT_NOTICE_ALLOWED",
+      "appliesGuestQuota": true,
+      "requiresDeposit": false,
+      "cleaningFeeCents": 0,
+      "hasReader": true,
+      "schedule": {
+        "all": {
+          "open": "07:00",
+          "close": "23:00"
+        }
+      },
+      "allowedRoles": [
+        "OWNER_RESIDENT",
+        "LONG_TERM_TENANT",
+        "AIRBNB_HOST",
+        "AIRBNB_GUEST"
+      ]
     },
     {
       "code": "PLAYROOM",
@@ -227,7 +243,7 @@
       "capacity": 12,
       "maxDurationMinutes": 120,
       "frequency": null,
-      "mode": "FREE_USE",
+      "mode": "SHARED",
       "advancePolicy": "SHORT_NOTICE_ALLOWED",
       "appliesGuestQuota": false,
       "requiresDeposit": false,
@@ -235,8 +251,8 @@
       "hasReader": false,
       "schedule": {
         "all": {
-          "open": "08:00",
-          "close": "22:00"
+          "open": "09:00",
+          "close": "23:00"
         }
       },
       "allowedRoles": [
@@ -244,10 +260,7 @@
         "LONG_TERM_TENANT",
         "AIRBNB_HOST",
         "AIRBNB_GUEST"
-      ],
-      "_pending": {
-        "schedule": "P-06"
-      }
+      ]
     },
     {
       "code": "PLAY_ZONE",
@@ -266,8 +279,8 @@
       "hasReader": true,
       "schedule": {
         "all": {
-          "open": "08:00",
-          "close": "22:00"
+          "open": "09:00",
+          "close": "23:00"
         }
       },
       "allowedRoles": [
@@ -275,11 +288,7 @@
         "LONG_TERM_TENANT",
         "AIRBNB_HOST",
         "AIRBNB_GUEST"
-      ],
-      "_pending": {
-        "schedule": "P-06",
-        "frequency": "P-17"
-      }
+      ]
     },
     {
       "code": "HOME_CINEMA",
@@ -298,23 +307,19 @@
       "hasReader": true,
       "schedule": {
         "all": {
-          "open": "08:00",
-          "close": "22:00"
+          "open": "09:00",
+          "close": "23:00"
         }
       },
       "allowedRoles": [
         "OWNER_RESIDENT",
         "LONG_TERM_TENANT",
         "AIRBNB_HOST"
-      ],
-      "_pending": {
-        "schedule": "P-06",
-        "requiresDeposit": "P-01"
-      }
+      ]
     },
     {
       "code": "LOUNGE",
-      "name": "Área Lounge",
+      "name": "Lounge Area",
       "capacity": 25,
       "maxDurationMinutes": 360,
       "frequency": {
@@ -329,18 +334,15 @@
       "hasReader": true,
       "schedule": {
         "all": {
-          "open": "08:00",
-          "close": "22:00"
+          "open": "09:00",
+          "close": "23:00"
         }
       },
       "allowedRoles": [
         "OWNER_RESIDENT",
         "LONG_TERM_TENANT",
         "AIRBNB_HOST"
-      ],
-      "_pending": {
-        "schedule": "P-06"
-      }
+      ]
     },
     {
       "code": "COMMUNITY_HALL",
@@ -359,22 +361,19 @@
       "hasReader": true,
       "schedule": {
         "all": {
-          "open": "08:00",
-          "close": "22:00"
+          "open": "09:00",
+          "close": "23:00"
         }
       },
       "allowedRoles": [
         "OWNER_RESIDENT",
         "LONG_TERM_TENANT",
         "AIRBNB_HOST"
-      ],
-      "_pending": {
-        "schedule": "P-06"
-      }
+      ]
     },
     {
       "code": "BBQ",
-      "name": "Zona BBQ",
+      "name": "Área BBQ",
       "capacity": 40,
       "maxDurationMinutes": 360,
       "frequency": {
@@ -389,21 +388,17 @@
       "hasReader": true,
       "schedule": {
         "all": {
-          "open": "08:00",
-          "close": "22:00"
+          "open": "09:00",
+          "close": "23:00"
         }
       },
       "allowedRoles": [
         "OWNER_RESIDENT",
         "LONG_TERM_TENANT",
         "AIRBNB_HOST"
-      ],
-      "_pending": {
-        "schedule": "P-06"
-      }
+      ]
     }
   ],
-  "_notes_access": "OWNER_LANDLORD no tiene acceso mientras su unidad tenga un arrendatario fijo vigente (Manual §10). En renta corta (Airbnb), el huésped accede a las 7 áreas permitidas y el propietario anfitrión puede usar las 4 áreas prohibidas al huésped (Home Cine, Lounge, Salón Comunal, BBQ) según Manual §10; confirmar si fuera de estancia accede a las 11 (P-02).",
   "cleaningCombos": [
     {
       "amenities": [
@@ -440,13 +435,5 @@
     "freeMinutes": 180,
     "overtimeFeeCentsPerHour": 150,
     "rounding": "CEIL_HOUR"
-  },
-  "readers": [],
-  "_readers_note": "Completar con el inventario del instalador (serie, IP, firmware y áreas).",
-  "knowledgeDocuments": [
-    {
-      "title": "Manual de Uso de Áreas Comunales – Edificio NOAH",
-      "file": "MANUAL_ACTUALIZADO.pdf"
-    }
-  ]
+  }
 }

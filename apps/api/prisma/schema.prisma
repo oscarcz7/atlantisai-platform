@@ -84,6 +84,40 @@ enum TicketStatus {
   CLOSED
 }
 
+enum ReaderStatus {
+  ONLINE
+  OFFLINE
+  UNKNOWN
+}
+
+enum CredentialSyncStatus {
+  PENDING
+  LOADED
+  REVOKE_PENDING
+  REVOKED
+  ERROR
+}
+
+enum GatewayCommandType {
+  UPSERT_CREDENTIAL
+  REVOKE_CREDENTIAL
+  PURGE
+  PING
+  OPEN_DOOR
+}
+
+enum GatewayCommandStatus {
+  PENDING
+  PROCESSING
+  ACKED
+  FAILED
+}
+
+enum AccessEventResult {
+  GRANTED
+  DENIED
+}
+
 /// Global SaaS table (not tenant-scoped)
 model Tenant {
   id           String   @id @db.Uuid
@@ -106,10 +140,14 @@ model Tenant {
   accessRules    AmenityAccessRule[]
   cleaningCombos CleaningCombo[]
   parkingConfig  ParkingConfig?
-  units          Unit[]
-  persons        Person[]
-  occupancies    Occupancy[]
-  reservations   Reservation[]
+  units           Unit[]
+  persons         Person[]
+  occupancies     Occupancy[]
+  reservations    Reservation[]
+  readers         Reader[]
+  credentials     Credential[]
+  gatewayCommands GatewayCommand[]
+  accessEvents    AccessEvent[]
 
   @@map("tenants")
 }
@@ -454,8 +492,9 @@ model Reservation {
   tenant    Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   unit      Unit?                 @relation(fields: [unitId], references: [id], onDelete: SetNull)
   person    Person?               @relation(fields: [personId], references: [id], onDelete: SetNull)
-  amenities ReservationAmenity[]
-  attendees ReservationAttendee[]
+  amenities   ReservationAmenity[]
+  attendees   ReservationAttendee[]
+  credentials Credential[]
 
   @@unique([tenantId, idempotencyKey])
   @@index([tenantId, startsAt, endsAt])
@@ -643,4 +682,108 @@ model TicketSubscriber {
   @@unique([ticketId, personId])
   @@index([tenantId, ticketId])
   @@map("ticket_subscribers")
+}
+
+/// Hikvision DS-K1T344EBFWX-E1 access control reader per communal area (RLS)
+model Reader {
+  id         String       @id @db.Uuid
+  tenantId   String       @map("tenant_id") @db.Uuid
+  code       String
+  name       String
+  serial     String?
+  model      String       @default("DS-K1T344EBFWX-E1")
+  protocol   String       @default("http")
+  ip         String
+  port       Int          @default(80)
+  doorNo     Int          @default(1) @map("door_no")
+  firmware   String?
+  amenityIds String[]     @default([]) @map("amenity_ids") @db.Uuid
+  status     ReaderStatus @default(UNKNOWN)
+  lastSeenAt DateTime?    @map("last_seen_at") @db.Timestamptz
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  commands GatewayCommand[]
+  events   AccessEvent[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("readers")
+}
+
+/// Temporary QR access credential bound to a reservation (RLS)
+model Credential {
+  id            String               @id @db.Uuid
+  tenantId      String               @map("tenant_id") @db.Uuid
+  reservationId String?              @map("reservation_id") @db.Uuid
+  employeeNo    String               @map("employee_no")
+  code          String
+  readerIds     String[]             @default([]) @map("reader_ids") @db.Uuid
+  validFrom     DateTime             @map("valid_from") @db.Timestamptz
+  validTo       DateTime             @map("valid_to") @db.Timestamptz
+  maxOpens      Int?                 @map("max_opens")
+  syncStatus    CredentialSyncStatus @default(PENDING) @map("sync_status")
+  lastError     String?              @map("last_error")
+  syncedAt      DateTime?            @map("synced_at") @db.Timestamptz
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime             @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reservation Reservation?     @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  commands    GatewayCommand[]
+  events      AccessEvent[]
+
+  @@unique([tenantId, employeeNo])
+  @@unique([tenantId, code])
+  @@index([tenantId, reservationId])
+  @@index([tenantId, syncStatus])
+  @@map("credentials")
+}
+
+/// Idempotent command queue consumed by apps/gateway (RLS)
+model GatewayCommand {
+  id             String               @id @db.Uuid
+  tenantId       String               @map("tenant_id") @db.Uuid
+  readerId       String?              @map("reader_id") @db.Uuid
+  credentialId   String?              @map("credential_id") @db.Uuid
+  idempotencyKey String               @map("idempotency_key")
+  type           GatewayCommandType
+  payload        Json
+  status         GatewayCommandStatus @default(PENDING)
+  attempts       Int                  @default(0)
+  lastError      String?              @map("last_error")
+  ackedAt        DateTime?            @map("acked_at") @db.Timestamptz
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reader     Reader?     @relation(fields: [readerId], references: [id], onDelete: SetNull)
+  credential Credential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, status, createdAt])
+  @@map("gateway_commands")
+}
+
+/// Real-time access events forwarded by Hikvision readers via Edge Gateway (RLS)
+model AccessEvent {
+  id             String            @id @db.Uuid
+  tenantId       String            @map("tenant_id") @db.Uuid
+  readerId       String?           @map("reader_id") @db.Uuid
+  credentialId   String?           @map("credential_id") @db.Uuid
+  employeeNo     String?           @map("employee_no")
+  credentialCode String?           @map("credential_code")
+  result         AccessEventResult
+  occurredAt     DateTime          @map("occurred_at") @db.Timestamptz
+  rawPayload     Json?             @map("raw_payload")
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reader     Reader?     @relation(fields: [readerId], references: [id], onDelete: SetNull)
+  credential Credential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, readerId])
+  @@map("access_events")
 }

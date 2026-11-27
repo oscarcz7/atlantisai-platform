@@ -16,3 +16,4 @@ coverage/
 *.tfvars
 !*.tfvars.example
 crash.log
+*.tsbuildinfo

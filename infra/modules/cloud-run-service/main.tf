@@ -17,6 +17,22 @@ variable "health_path" {
   type    = string
   default = "/health"
 }
+variable "container_port" {
+  type    = number
+  default = 8080
+}
+variable "env_vars" {
+  type    = map(string)
+  default = {}
+}
+variable "secret_env_vars" {
+  type    = map(string)
+  default = {}
+}
+variable "allow_unauthenticated" {
+  type    = bool
+  default = true
+}
 
 resource "google_cloud_run_v2_service" "this" {
   name     = var.name
@@ -50,12 +66,37 @@ resource "google_cloud_run_v2_service" "this" {
     containers {
       image = var.image
 
+      ports {
+        container_port = var.container_port
+      }
+
       resources {
         limits = {
           cpu    = "1"
           memory = "512Mi"
         }
         cpu_idle = !var.cpu_always_allocated
+      }
+
+      dynamic "env" {
+        for_each = var.env_vars
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.secret_env_vars
+        content {
+          name = env.key
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
       }
 
       startup_probe {
@@ -73,6 +114,15 @@ resource "google_cloud_run_v2_service" "this" {
       }
     }
   }
+}
+
+resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
+  count    = var.allow_unauthenticated ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.this.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }
 
 output "uri" {
