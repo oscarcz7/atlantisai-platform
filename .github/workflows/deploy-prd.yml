@@ -13,17 +13,37 @@ env:
   GCP_REGION: ${{ vars.GCP_REGION || 'us-east1' }}
   GCP_PROJECT: ${{ vars.GCP_PROJECT_PRD }}
 
+concurrency:
+  group: deploy-prd
+  cancel-in-progress: false
+
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   deploy:
+    needs: ci
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag points to a commit on main
+        run: |
+          git fetch origin main --quiet
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::El tag ${GITHUB_REF_NAME} no apunta a un commit de main. Despliegue abortado."
+            exit 1
+          fi
 
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+          # Dedicated prod SA (infra/bootstrap output deployer_service_account_prd).
+          # Falls back to the legacy shared SA until GCP_DEPLOYER_SA_PRD is configured.
+          service_account: ${{ vars.GCP_DEPLOYER_SA_PRD || vars.GCP_DEPLOYER_SA }}
 
       - uses: google-github-actions/setup-gcloud@v2
 

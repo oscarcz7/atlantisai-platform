@@ -17,3 +17,7 @@ coverage/
 !*.tfvars.example
 crash.log
 *.tsbuildinfo
+
+# Datos personales reales: nunca versionar (LOPDP)
+seed/*-cadastre.json
+seed/private/

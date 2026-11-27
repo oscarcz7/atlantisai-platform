@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* turbo.json tsconfig.base.json ./
 COPY packages ./packages
 COPY apps/api ./apps/api
-RUN pnpm install --frozen-lockfile || pnpm install
+RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @noah/api db:generate && pnpm --filter @noah/api... build
 RUN pnpm --filter @noah/api deploy --prod /prod/api
 

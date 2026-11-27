@@ -17,6 +17,12 @@ variable "github_repository" {
   description = "GitHub repository in owner/repo format"
 }
 
+variable "github_repository_owner_id" {
+  type        = string
+  description = "Numeric GitHub owner ID (immutable; protects against repo rename/re-creation). Empty to skip."
+  default     = ""
+}
+
 variable "region" {
   type    = string
   default = "us-east1"
@@ -44,9 +50,17 @@ resource "google_storage_bucket" "tf_state" {
   }
 }
 
+# Staging deployer (kept with its original ID so existing role grants keep working).
 resource "google_service_account" "deployer" {
   account_id   = "github-deployer"
-  display_name = "GitHub Actions Deployer"
+  display_name = "GitHub Actions Deployer (staging)"
+}
+
+# Production deployer: only reachable from the protected `production` environment on v* tags.
+# Grant it run.developer / artifactregistry.writer / iam.serviceAccountUser on the PRD project only.
+resource "google_service_account" "deployer_prd" {
+  account_id   = "github-deployer-prd"
+  display_name = "GitHub Actions Deployer (production)"
 }
 
 resource "google_iam_workload_identity_pool" "github" {
@@ -60,11 +74,22 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   display_name                       = "GitHub OIDC"
 
   attribute_mapping = {
-    "google.subject"       = "assertion.sub"
-    "attribute.repository" = "assertion.repository"
+    "google.subject"                = "assertion.sub"
+    "attribute.repository"          = "assertion.repository"
+    "attribute.repository_owner_id" = "assertion.repository_owner_id"
+    "attribute.environment"         = "assertion.environment"
+    "attribute.ref"                 = "assertion.ref"
   }
 
-  attribute_condition = "assertion.repository == '${var.github_repository}'"
+  # Only the repo's protected GitHub environments may obtain credentials:
+  #  - staging:    push to main
+  #  - production: v* tags (environment `production` must require reviewers in GitHub)
+  # Any other branch/workflow (e.g. a feature branch with a custom workflow) is rejected.
+  attribute_condition = join(" && ", compact([
+    "assertion.repository == '${var.github_repository}'",
+    var.github_repository_owner_id != "" ? "assertion.repository_owner_id == '${var.github_repository_owner_id}'" : "",
+    "((assertion.environment == 'staging' && assertion.ref == 'refs/heads/main') || (assertion.environment == 'production' && assertion.ref.startsWith('refs/tags/v')))",
+  ]))
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
@@ -74,7 +99,13 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 resource "google_service_account_iam_member" "wif_binding" {
   service_account_id = google_service_account.deployer.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repository}"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.environment/staging"
+}
+
+resource "google_service_account_iam_member" "wif_binding_prd" {
+  service_account_id = google_service_account.deployer_prd.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.environment/production"
 }
 
 output "tf_state_bucket" {
@@ -87,4 +118,8 @@ output "wif_provider" {
 
 output "deployer_service_account" {
   value = google_service_account.deployer.email
+}
+
+output "deployer_service_account_prd" {
+  value = google_service_account.deployer_prd.email
 }

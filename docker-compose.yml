@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: noah_owner
       POSTGRES_PASSWORD: noah_owner
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - noah-db-data:/var/lib/postgresql/data
       - ./infra/local/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro

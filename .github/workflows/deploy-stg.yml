@@ -12,8 +12,16 @@ env:
   GCP_REGION: ${{ vars.GCP_REGION || 'us-east1' }}
   GCP_PROJECT: ${{ vars.GCP_PROJECT_STG }}
 
+concurrency:
+  group: deploy-stg
+  cancel-in-progress: false
+
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   deploy:
+    needs: ci
     runs-on: ubuntu-latest
     environment: staging
     steps:

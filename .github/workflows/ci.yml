@@ -2,12 +2,14 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   checks:
@@ -36,8 +38,7 @@ jobs:
       - name: Preparar base de datos de pruebas
         run: PGPASSWORD=noah_owner psql -h localhost -U noah_owner -d noah -f infra/local/init.sql
       - name: Instalar dependencias
-        run: |
-          if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else pnpm install; fi
+        run: pnpm install --frozen-lockfile
       - name: Generar cliente Prisma y aplicar migraciones
         run: |
           pnpm --filter @noah/api db:generate
