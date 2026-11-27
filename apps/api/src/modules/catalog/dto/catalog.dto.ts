@@ -12,6 +12,7 @@ import {
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
   Min,
   ValidateBy,
@@ -127,6 +128,13 @@ export class UpsertSettingsDto implements UpsertSettingsInput {
   @IsOptionalNotNull()
   @IsIn(WEEK_DAYS)
   frequencyWeekStart?: string;
+
+  /** Day of month (1-31, clamped to the month's last day) on which monthly fees are due. */
+  @IsOptionalNotNull()
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  monthlyFeeDueDay?: number;
 
   /** null clears the policy. */
   @IsOptional()
@@ -257,4 +265,10 @@ export class UpsertParkingDto {
   @IsOptionalNotNull()
   @IsIn(PARKING_ROUNDINGS)
   rounding?: string;
+
+  /** Minutes before the free window ends at which the guard console raises an alert. */
+  @IsOptionalNotNull()
+  @IsInt()
+  @Min(0)
+  alertMarginMinutes?: number;
 }

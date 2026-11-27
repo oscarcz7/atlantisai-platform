@@ -6,6 +6,13 @@ import { Money, StatusBadge } from '@noah/ui';
 import { HabitatDrawer, HabitatToast, ModuleHero, SearchableSelect } from '../../../components/habitat-ui';
 import { QrTicketDrawer } from '../../../components/qr-ticket-drawer';
 import { useDashboard } from '../../../lib/dashboard-context';
+import {
+  addDaysToDateKey,
+  formatDateTimeInZone,
+  todayInZone,
+  utcToZonedInputs,
+  zonedTimeToUtcIso,
+} from '../../../lib/zoned-time';
 
 interface ReservationRow {
   id: string;
@@ -18,29 +25,6 @@ interface ReservationRow {
   person?: { id: string; fullName: string; waPhone?: string | null } | null;
   amenities: Array<{ amenity: { id: string; name: string } }>;
   credentials?: Array<{ id: string; employeeNo: string; code: string; syncStatus: string }>;
-}
-
-function toEcuadorDateInput(iso: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Guayaquil',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(iso));
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '01';
-  return `${get('year')}-${get('month')}-${get('day')}`;
-}
-
-function toEcuadorTimeInput(iso: string): string {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'America/Guayaquil',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date(iso));
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '00';
-  const hour = get('hour') === '24' ? '00' : get('hour');
-  return `${hour}:${get('minute')}`;
 }
 
 interface AmenityOption {
@@ -96,7 +80,7 @@ interface SimulationResult {
 }
 
 export default function ReservationsPage() {
-  const { me, tenantId, apiFetch } = useDashboard();
+  const { me, tenantId, tenantTimezone, apiFetch } = useDashboard();
   const [rows, setRows] = useState<ReservationRow[]>([]);
   const [amenities, setAmenities] = useState<AmenityOption[]>([]);
   const [units, setUnits] = useState<UnitOption[]>([]);
@@ -107,35 +91,38 @@ export default function ReservationsPage() {
   const [selectedAmenityIds, setSelectedAmenityIds] = useState<string[]>([]);
   const [unitId, setUnitId] = useState('');
   const [personId, setPersonId] = useState('');
-  const [date, setDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 2);
-    return d.toISOString().slice(0, 10);
-  });
+  const [date, setDate] = useState(() => addDaysToDateKey(todayInZone(tenantTimezone), 2));
   const [startTime, setStartTime] = useState('14:00');
   const [endTime, setEndTime] = useState('16:00');
   const [attendees, setAttendees] = useState('4');
   const [simulation, setSimulation] = useState<SimulationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const canManage = me.role === 'SUPERADMIN' || me.role === 'ADMIN';
 
   const loadData = useCallback(async () => {
     if (!tenantId) return;
-    const [res, am, un] = await Promise.all([
-      apiFetch<ReservationRow[]>('/reservations'),
-      apiFetch<AmenityOption[]>('/catalog/amenities'),
-      apiFetch<UnitOption[]>('/cadastre/units'),
-    ]);
-    setRows(res);
-    setAmenities(am.filter((a) => a.mode !== 'FREE_USE'));
-    setUnits(un);
-    if (!unitId && un.length > 0) {
-      const firstWithOccupant = un.find((u) => getActiveOccupancies(u).length > 0) ?? un[0]!;
-      setUnitId(firstWithOccupant.id);
-      const activeOccs = getActiveOccupancies(firstWithOccupant);
-      setPersonId(activeOccs[0]?.personId ?? '');
+    try {
+      const [res, am, un] = await Promise.all([
+        apiFetch<ReservationRow[]>('/reservations'),
+        apiFetch<AmenityOption[]>('/catalog/amenities'),
+        apiFetch<UnitOption[]>('/cadastre/units'),
+      ]);
+      setRows(res);
+      setAmenities(am.filter((a) => a.mode !== 'FREE_USE'));
+      setUnits(un);
+      if (!unitId && un.length > 0) {
+        const firstWithOccupant = un.find((u) => getActiveOccupancies(u).length > 0) ?? un[0]!;
+        setUnitId(firstWithOccupant.id);
+        const activeOccs = getActiveOccupancies(firstWithOccupant);
+        setPersonId(activeOccs[0]?.personId ?? '');
+      }
+      setPageError(null);
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : 'No se pudieron cargar las reservas.');
     }
   }, [apiFetch, tenantId, unitId]);
 
@@ -174,9 +161,10 @@ export default function ReservationsPage() {
     if (row.unit?.id) setUnitId(row.unit.id);
     if (row.person?.id) setPersonId(row.person.id);
     setSelectedAmenityIds(row.amenities.map((a) => a.amenity.id));
-    setDate(toEcuadorDateInput(row.startsAt));
-    setStartTime(toEcuadorTimeInput(row.startsAt));
-    setEndTime(toEcuadorTimeInput(row.endsAt));
+    const start = utcToZonedInputs(row.startsAt, tenantTimezone);
+    setDate(start.date);
+    setStartTime(start.time);
+    setEndTime(utcToZonedInputs(row.endsAt, tenantTimezone).time);
     setAttendees(String(row.declaredAttendees));
     setError(null);
     setSimulation(null);
@@ -188,8 +176,8 @@ export default function ReservationsPage() {
       unitId,
       personId,
       amenityIds: selectedAmenityIds,
-      startsAt: `${date}T${startTime}:00-05:00`,
-      endsAt: `${date}T${endTime}:00-05:00`,
+      startsAt: zonedTimeToUtcIso(date, startTime, tenantTimezone),
+      endsAt: zonedTimeToUtcIso(date, endTime, tenantTimezone),
       declaredAttendees: Number(attendees),
       ...(editingReservationId ? { excludeReservationId: editingReservationId } : {}),
     };
@@ -211,6 +199,7 @@ export default function ReservationsPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSaving(true);
     try {
       if (editingReservationId) {
         const updated = await apiFetch<{ id: string; status: string }>(
@@ -219,8 +208,8 @@ export default function ReservationsPage() {
             method: 'PATCH',
             body: {
               amenityIds: selectedAmenityIds,
-              startsAt: `${date}T${startTime}:00-05:00`,
-              endsAt: `${date}T${endTime}:00-05:00`,
+              startsAt: zonedTimeToUtcIso(date, startTime, tenantTimezone),
+              endsAt: zonedTimeToUtcIso(date, endTime, tenantTimezone),
               declaredAttendees: Number(attendees),
             },
           },
@@ -255,15 +244,22 @@ export default function ReservationsPage() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar la reserva.');
+    } finally {
+      setSaving(false);
     }
   }
 
   async function handleCancel(id: string) {
     const reason = window.prompt('Motivo obligatorio de cancelación:');
     if (!reason || !reason.trim()) return;
-    await apiFetch(`/reservations/${id}/cancel`, { method: 'POST', body: { reason } });
-    setToast('Reserva cancelada y registrada en auditoría.');
-    await loadData();
+    setPageError(null);
+    try {
+      await apiFetch(`/reservations/${id}/cancel`, { method: 'POST', body: { reason } });
+      setToast('Reserva cancelada y registrada en auditoría.');
+      await loadData();
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : 'No se pudo cancelar la reserva.');
+    }
   }
 
   const confirmedCount = rows.filter((r) => r.status === 'CONFIRMED').length;
@@ -290,6 +286,7 @@ export default function ReservationsPage() {
       />
 
       {toast && <HabitatToast type="ok" text={toast} onClose={() => setToast(null)} />}
+      {pageError && <HabitatToast type="err" text={pageError} onClose={() => setPageError(null)} />}
 
       <div className="h-kpi-strip">
         <article className="h-kpi-card">
@@ -336,9 +333,9 @@ export default function ReservationsPage() {
                     {r.person ? ` · ${r.person.fullName}` : ''}
                   </td>
                   <td style={{ fontSize: '12.5px', color: 'var(--muted-foreground)' }}>
-                    {new Date(r.startsAt).toLocaleString('es-EC', { timeZone: 'America/Guayaquil', dateStyle: 'short', timeStyle: 'short' })}
+                    {formatDateTimeInZone(r.startsAt, tenantTimezone)}
                     {' – '}
-                    {new Date(r.endsAt).toLocaleTimeString('es-EC', { timeZone: 'America/Guayaquil', timeStyle: 'short' })}
+                    {formatDateTimeInZone(r.endsAt, tenantTimezone, { timeStyle: 'short' })}
                   </td>
                   <td>{r.declaredAttendees}</td>
                   <td>
@@ -535,8 +532,8 @@ export default function ReservationsPage() {
             <button type="button" className="h-btn-outline" onClick={() => setDrawerOpen(false)}>
               Cancelar
             </button>
-            <button type="submit" disabled={!simulation?.ok} className="h-btn-dark">
-              {editingReservationId ? 'Guardar cambios' : 'Confirmar reserva'}
+            <button type="submit" disabled={!simulation?.ok || saving} className="h-btn-dark">
+              {saving ? 'Guardando…' : editingReservationId ? 'Guardar cambios' : 'Confirmar reserva'}
             </button>
           </div>
         </form>

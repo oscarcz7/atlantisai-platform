@@ -39,5 +39,7 @@ Las preguntas abiertas listas para enviar por responsable están separadas en [`
 | P-16 | Administrador | Margen de entrada antes del inicio de la reserva para activar el QR | 10 minutos | `entryMarginMinutes` |
 | P-17 | Administrador | «Todos los días» (Coworking, Gimnasio, Play Zone): ¿máximo 1 reserva diaria por unidad o varias? | 1 por día | `amenity.frequency` |
 | P-18 | Administrador | Airbnb (§6 del Manual): ¿en la nueva plataforma el huésped registrado puede reservar directo por WhatsApp o solo el anfitrión antes de entregar llaves? | Huésped reserva en sus 7 áreas tras ser registrado por el anfitrión | Reglas de `AIRBNB_GUEST` |
+| P-19 | Admin / Contador | Día del mes en que vence la alícuota mensual (si el mes es más corto, vence el último día a las 23:59 hora del edificio) | Día 10 | `monthlyFeeDueDay` |
+| P-20 | Administrador | Minutos antes de terminar el tiempo gratuito de parqueadero de visitas en que la garita muestra alerta | 15 minutos | `parkingConfig.alertMarginMinutes` |
 | L-01 | Contador / Abogado | ¿Limpieza, invitados extra y exceso de parqueadero requieren factura electrónica del SRI o basta con comprobante de recaudación? | Comprobante de recaudación | Módulo `billing` |
 | L-02 | Abogado | Responsable del tratamiento de datos personales y política de retención/borrado (LOPDP Ecuador) | Por definir | Política de retención |

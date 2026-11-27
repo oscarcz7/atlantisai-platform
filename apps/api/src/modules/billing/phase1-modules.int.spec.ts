@@ -113,9 +113,9 @@ describe('Phase 1 E2E Modules Integration (Specs 007–011)', () => {
       amountCents: 20000,
       reason: 'Depósito inicial',
     });
-    await billingService.generateMonthlyFees(ctx, '2026-08', '2026-08-10T00:00:00Z');
-    await billingService.generateMonthlyFees(ctx, '2026-09', '2026-09-10T00:00:00Z');
-    await billingService.generateMonthlyFees(ctx, '2026-10', '2026-10-10T00:00:00Z');
+    await billingService.generateMonthlyFees(ctx, { billingMonth: '2026-08', dueDate: '2026-08-10T00:00:00Z' });
+    await billingService.generateMonthlyFees(ctx, { billingMonth: '2026-09', dueDate: '2026-09-10T00:00:00Z' });
+    await billingService.generateMonthlyFees(ctx, { billingMonth: '2026-10', dueDate: '2026-10-10T00:00:00Z' });
 
     const arrearsSim = await reservationsService.simulate(
       ctx,

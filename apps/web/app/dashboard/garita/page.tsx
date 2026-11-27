@@ -3,8 +3,20 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Car, Clock, LogIn, LogOut, Plus, Shield } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
-import { HabitatDrawer, ModuleHero, SearchableSelect } from '../../../components/habitat-ui';
+import { HabitatDrawer, HabitatToast, ModuleHero, SearchableSelect } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
+import { formatTimeInZone } from '../../../lib/zoned-time';
+
+interface ParkingLive {
+  minutesParked: number;
+  freeMinutes: number;
+  remainingFreeMinutes: number;
+  overtimeMinutes: number;
+  billedHoursSoFar: number;
+  overtimeCentsSoFar: number;
+  alertLevel: 'OK' | 'WARNING' | 'OVERTIME';
+  alert: boolean;
+}
 
 interface ParkingSpot {
   spot: number;
@@ -13,6 +25,17 @@ interface ParkingSpot {
   visitorName: string | null;
   plate: string | null;
   checkInAt: string | null;
+  /** Computed by the API (ParkingConfig): live minutes, overtime so far and alert flag. */
+  parking: ParkingLive | null;
+}
+
+interface ParkingStatus {
+  configured: boolean;
+  totalSpots: number;
+  freeMinutes: number | null;
+  overtimeFeeCentsPerHour: number | null;
+  alertMarginMinutes: number | null;
+  spots: ParkingSpot[];
 }
 
 interface VisitRow {
@@ -25,6 +48,7 @@ interface VisitRow {
   checkInAt: string | null;
   checkOutAt: string | null;
   overtimeCents: number;
+  parking: ParkingLive | null;
 }
 
 interface UnitOption {
@@ -32,21 +56,24 @@ interface UnitOption {
   number: string;
 }
 
-function formatElapsed(checkInIso: string, nowMs: number): { text: string; minutes: number } {
-  const diffMin = Math.max(0, Math.floor((nowMs - new Date(checkInIso).getTime()) / 60_000));
-  const h = Math.floor(diffMin / 60);
-  const m = diffMin % 60;
-  return { text: `${h}h ${String(m).padStart(2, '0')}m`, minutes: diffMin };
+const REFRESH_MS = 60_000;
+
+function formatMinutes(total: number): string {
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return `${h}h ${String(m).padStart(2, '0')}m`;
 }
 
 export default function GaritaConsolePage() {
-  const { tenantId, apiFetch } = useDashboard();
-  const [spots, setSpots] = useState<ParkingSpot[]>([]);
-  const [freeMinutes, setFreeMinutes] = useState(180);
+  const { tenantId, tenantTimezone, apiFetch } = useDashboard();
+  const [parkingStatus, setParkingStatus] = useState<ParkingStatus | null>(null);
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [units, setUnits] = useState<UnitOption[]>([]);
-  const [nowMs, setNowMs] = useState(() => Date.now());
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const [hostUnitId, setHostUnitId] = useState('');
   const [visitorName, setVisitorName] = useState('');
@@ -54,62 +81,101 @@ export default function GaritaConsolePage() {
   const [plate, setPlate] = useState('');
   const [needsParking, setNeedsParking] = useState(true);
 
-  const loadData = useCallback(async () => {
+  const loadLive = useCallback(async () => {
     if (!tenantId) return;
-    const [pk, vis, un] = await Promise.all([
-      apiFetch<{ freeMinutes: number; spots: ParkingSpot[] }>('/visits/parking-status'),
-      apiFetch<VisitRow[]>('/visits'),
-      apiFetch<UnitOption[]>('/cadastre/units'),
-    ]);
-    setFreeMinutes(pk.freeMinutes);
-    setSpots(pk.spots);
-    setVisits(vis);
-    setUnits(un);
-    if (!hostUnitId && un[0]) setHostUnitId(un[0].id);
-  }, [apiFetch, tenantId, hostUnitId]);
+    try {
+      const [pk, vis] = await Promise.all([
+        apiFetch<ParkingStatus>('/visits/parking-status'),
+        apiFetch<VisitRow[]>('/visits'),
+      ]);
+      setParkingStatus(pk);
+      setVisits(vis);
+      setLastUpdated(new Date());
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'No se pudo actualizar la consola de garita.');
+    }
+  }, [apiFetch, tenantId]);
+
+  const loadUnits = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      const un = await apiFetch<UnitOption[]>('/cadastre/units');
+      setUnits(un);
+      setHostUnitId((prev) => prev || un[0]?.id || '');
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar las unidades.');
+    }
+  }, [apiFetch, tenantId]);
 
   useEffect(() => {
-    void loadData();
-    const timer = setInterval(() => setNowMs(Date.now()), 15_000);
+    void loadUnits();
+  }, [loadUnits]);
+
+  useEffect(() => {
+    void loadLive();
+    const timer = setInterval(() => void loadLive(), REFRESH_MS);
     return () => clearInterval(timer);
-  }, [loadData]);
+  }, [loadLive]);
+
+  async function runAction(key: string, action: () => Promise<void>) {
+    setBusy(key);
+    setActionError(null);
+    try {
+      await action();
+      await loadLive();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'No se pudo completar la operación.');
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function handleRegister(e: FormEvent) {
     e.preventDefault();
-    await apiFetch('/visits', {
-      method: 'POST',
-      body: {
-        hostUnitId,
-        visitorName,
-        nationalId,
-        ...(plate ? { plate } : {}),
-        needsParking,
-        expectedAt: new Date().toISOString(),
-      },
+    await runAction('register', async () => {
+      await apiFetch('/visits', {
+        method: 'POST',
+        body: {
+          hostUnitId,
+          visitorName,
+          nationalId,
+          ...(plate ? { plate } : {}),
+          needsParking,
+          expectedAt: new Date().toISOString(),
+        },
+      });
+      setVisitorName('');
+      setNationalId('');
+      setPlate('');
+      setDrawerOpen(false);
     });
-    setVisitorName('');
-    setNationalId('');
-    setPlate('');
-    setDrawerOpen(false);
-    await loadData();
   }
 
   async function handleCheckIn(id: string) {
-    await apiFetch(`/visits/${id}/check-in`, { method: 'POST', body: {} });
-    await loadData();
+    await runAction(`in:${id}`, async () => {
+      await apiFetch(`/visits/${id}/check-in`, { method: 'POST', body: {} });
+    });
   }
 
   async function handleCheckOut(id: string) {
-    await apiFetch(`/visits/${id}/check-out`, { method: 'POST', body: {} });
-    await loadData();
+    await runAction(`out:${id}`, async () => {
+      await apiFetch(`/visits/${id}/check-out`, { method: 'POST', body: {} });
+    });
   }
+
+  const spots = parkingStatus?.spots ?? [];
+  const description =
+    parkingStatus?.configured && parkingStatus.freeMinutes !== null
+      ? `Modo tablet táctil: tiempo de parqueaderos de visitas (alerta ${parkingStatus.alertMarginMinutes ?? 0} min antes de terminar el tiempo gratuito de ${formatMinutes(parkingStatus.freeMinutes)}).`
+      : 'Modo tablet táctil: registro de visitas. Configura los parqueaderos de visitas en Configuración → Parqueaderos.';
 
   return (
     <section className="internal-page" style={{ fontSize: '15px' }}>
       <ModuleHero
         eyebrow="CONTROL DE ACCESO Y PARQUEADEROS"
         title="Consola de garita"
-        description={`Modo tablet táctil: cronómetro en vivo de parqueaderos de visitas (alerta a 2h45m, exceso al superar ${freeMinutes / 60} h).`}
+        description={description}
         icon={Shield}
         actions={
           <button type="button" className="h-btn-dark" style={{ minHeight: '44px', padding: '0 20px', fontSize: '14px' }} onClick={() => setDrawerOpen(true)}>
@@ -118,11 +184,26 @@ export default function GaritaConsolePage() {
         }
       />
 
+      {loadError && (
+        <div className="h-notice h-notice-err" role="alert">
+          <span>{loadError}</span>
+          <button type="button" className="h-btn-outline" onClick={() => void loadLive()}>
+            Reintentar
+          </button>
+        </div>
+      )}
+      {actionError && <HabitatToast type="err" text={actionError} onClose={() => setActionError(null)} />}
+      {lastUpdated && (
+        <p style={{ margin: 0, fontSize: '12px', color: 'var(--muted-foreground)' }}>
+          Actualizado {formatTimeInZone(lastUpdated, tenantTimezone)} · se refresca cada minuto
+        </p>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '14px' }}>
         {spots.map((s) => {
-          const elapsed = s.checkInAt ? formatElapsed(s.checkInAt, nowMs) : null;
-          const isOver = Boolean(s.occupied && elapsed && elapsed.minutes >= freeMinutes);
-          const isWarn = Boolean(s.occupied && elapsed && !isOver && elapsed.minutes >= freeMinutes - 15);
+          const live = s.occupied ? s.parking : null;
+          const isOver = live?.alertLevel === 'OVERTIME';
+          const isWarn = live?.alertLevel === 'WARNING';
           const accent = isOver ? '#b7544d' : isWarn ? '#99771f' : s.occupied ? 'var(--primary)' : 'var(--border)';
 
           return (
@@ -145,19 +226,31 @@ export default function GaritaConsolePage() {
               <p style={{ margin: '4px 0 0', fontSize: '15px', fontWeight: s.occupied ? 600 : 400, color: s.occupied ? 'var(--foreground)' : 'var(--muted-foreground)' }}>
                 {s.occupied ? `${s.visitorName ?? 'Visita'} · ${s.plate ?? 'Sin placa'}` : 'Disponible'}
               </p>
-              {elapsed && (
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '20px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: accent }}>
-                  <Clock size={16} /> {elapsed.text}
-                </div>
+              {live && (
+                <>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '20px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: accent }}>
+                    <Clock size={16} /> {formatMinutes(live.minutesParked)}
+                  </div>
+                  <small style={{ color: accent, fontSize: '12.5px' }}>
+                    {isOver ? (
+                      <>
+                        Exceso {formatMinutes(live.overtimeMinutes)} · <Money cents={live.overtimeCentsSoFar} /> hasta ahora
+                      </>
+                    ) : (
+                      `Quedan ${formatMinutes(live.remainingFreeMinutes)} gratis`
+                    )}
+                  </small>
+                </>
               )}
               {s.occupied && s.visitId && (
                 <button
                   type="button"
                   className="h-btn-danger"
                   style={{ marginTop: '6px', minHeight: '44px', width: '100%' }}
+                  disabled={busy !== null}
                   onClick={() => void handleCheckOut(s.visitId!)}
                 >
-                  <LogOut size={15} /> Registrar salida
+                  <LogOut size={15} /> {busy === `out:${s.visitId}` ? 'Registrando…' : 'Registrar salida'}
                 </button>
               )}
             </article>
@@ -196,14 +289,24 @@ export default function GaritaConsolePage() {
                   </td>
                   <td>{v.plate ?? '—'}</td>
                   <td>{v.parkingSpot ? `#${v.parkingSpot}` : '—'}</td>
-                  <td>{v.overtimeCents > 0 ? <Money cents={v.overtimeCents} /> : '—'}</td>
+                  <td>
+                    {v.overtimeCents > 0 ? (
+                      <Money cents={v.overtimeCents} />
+                    ) : v.parking && v.parking.overtimeCentsSoFar > 0 ? (
+                      <span style={{ color: '#b7544d' }}>
+                        <Money cents={v.parking.overtimeCentsSoFar} /> (en curso)
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td style={{ textAlign: 'right' }}>
                     {!v.checkInAt ? (
-                      <button type="button" className="h-btn-success" style={{ minHeight: '44px' }} onClick={() => void handleCheckIn(v.id)}>
+                      <button type="button" className="h-btn-success" style={{ minHeight: '44px' }} disabled={busy !== null} onClick={() => void handleCheckIn(v.id)}>
                         <LogIn size={15} /> Entrada
                       </button>
                     ) : !v.checkOutAt ? (
-                      <button type="button" className="h-btn-danger" style={{ minHeight: '44px' }} onClick={() => void handleCheckOut(v.id)}>
+                      <button type="button" className="h-btn-danger" style={{ minHeight: '44px' }} disabled={busy !== null} onClick={() => void handleCheckOut(v.id)}>
                         <LogOut size={15} /> Salida
                       </button>
                     ) : (
@@ -255,12 +358,13 @@ export default function GaritaConsolePage() {
             <input type="checkbox" checked={needsParking} onChange={(e) => setNeedsParking(e.target.checked)} style={{ width: '18px', height: '18px' }} />
             Usa parqueadero de visitas
           </label>
+          {actionError && <HabitatToast type="err" text={actionError} onClose={() => setActionError(null)} />}
           <div className="h-drawer-footer">
             <button type="button" className="h-btn-outline" style={{ minHeight: '44px' }} onClick={() => setDrawerOpen(false)}>
               Cancelar
             </button>
-            <button type="submit" className="h-btn-dark" style={{ minHeight: '44px' }}>
-              Guardar visita
+            <button type="submit" className="h-btn-dark" style={{ minHeight: '44px' }} disabled={busy === 'register'}>
+              {busy === 'register' ? 'Guardando…' : 'Guardar visita'}
             </button>
           </div>
         </form>

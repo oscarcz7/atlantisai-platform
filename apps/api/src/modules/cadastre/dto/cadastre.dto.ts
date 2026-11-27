@@ -31,6 +31,8 @@ const OCCUPANCY_ROLES: OccupancyRole[] = [
   'AIRBNB_GUEST',
 ];
 
+const MONTHLY_FEE_MODES = ['AUTO', 'MANUAL'] as const;
+
 /** Optional, but when present must not be null (the service would crash or write invalid data on null). */
 const IsOptionalNotNull = (): PropertyDecorator => ValidateIf((_o, v) => v !== undefined);
 
@@ -61,6 +63,11 @@ export class CreateUnitDto {
   @IsInt()
   @Min(0)
   monthlyFeeCents?: number;
+
+  /** 'AUTO' = area × building rate (clears the manual flag); 'MANUAL' = use monthlyFeeCents. */
+  @IsOptionalNotNull()
+  @IsIn(MONTHLY_FEE_MODES)
+  monthlyFeeMode?: 'AUTO' | 'MANUAL';
 }
 
 export class UpdateUnitDto {
@@ -93,6 +100,11 @@ export class UpdateUnitDto {
   @IsInt()
   @Min(0)
   monthlyFeeCents?: number;
+
+  /** 'AUTO' = area × building rate (clears the manual flag); 'MANUAL' = use monthlyFeeCents. */
+  @IsOptionalNotNull()
+  @IsIn(MONTHLY_FEE_MODES)
+  monthlyFeeMode?: 'AUTO' | 'MANUAL';
 
   @IsOptionalNotNull()
   @IsBoolean()

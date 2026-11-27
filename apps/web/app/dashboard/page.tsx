@@ -20,6 +20,7 @@ import { Money, StatusBadge } from '@noah/ui';
 import { ModuleHero, SearchableSelect } from '../../components/habitat-ui';
 import { authApi, type StaffProfile } from '../../lib/api/auth';
 import { useDashboard } from '../../lib/dashboard-context';
+import { formatDateTimeInZone, formatMonthKey, formatMonthOnly } from '../../lib/zoned-time';
 
 interface TenantSummary {
   id: string;
@@ -58,6 +59,20 @@ interface IncidentRow {
   urgency: 'LOW' | 'MEDIUM' | 'HIGH' | 'EMERGENCY';
   status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
   createdAt: string;
+}
+
+interface MonthlyBalance {
+  timezone: string;
+  months: Array<{ month: string; billedCents: number; collectedCents: number }>;
+}
+
+function compactUsd(cents: number): string {
+  return new Intl.NumberFormat('es-EC', {
+    style: 'currency',
+    currency: 'USD',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(cents / 100);
 }
 
 interface SummaryReport {
@@ -182,8 +197,12 @@ function SuperAdminOverview() {
 }
 
 export default function DashboardOverviewPage() {
-  const { me, tenantId, apiFetch } = useDashboard();
+  const { me, tenantId, tenantTimezone, apiFetch } = useDashboard();
   const [units, setUnits] = useState<UnitRow[]>([]);
+  const [balance, setBalance] = useState<MonthlyBalance | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [partialErrors, setPartialErrors] = useState<string[]>([]);
   const [persons, setPersons] = useState<PersonRow[]>([]);
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [incidents, setIncidents] = useState<IncidentRow[]>([]);
@@ -195,22 +214,39 @@ export default function DashboardOverviewPage() {
 
   const load = useCallback(async () => {
     if (!tenantId || me.role === 'SUPERADMIN') return;
-    const [u, p, r, inc, rep] = await Promise.all([
-      apiFetch<UnitRow[]>('/cadastre/units').catch(() => []),
-      apiFetch<PersonRow[]>('/cadastre/persons').catch(() => []),
-      apiFetch<ReservationRow[]>('/reservations').catch(() => []),
-      me.role !== 'ACCOUNTANT'
-        ? apiFetch<IncidentRow[]>('/incidents').catch(() => [])
-        : Promise.resolve([]),
-      me.role !== 'GUARD'
-        ? apiFetch<SummaryReport>('/audit/reports/summary').catch(() => null)
-        : Promise.resolve(null),
+    setLoading(true);
+    const canSeeFinance = me.role !== 'GUARD';
+    const [u, p, r, inc, rep, bal] = await Promise.allSettled([
+      apiFetch<UnitRow[]>('/cadastre/units'),
+      apiFetch<PersonRow[]>('/cadastre/persons'),
+      apiFetch<ReservationRow[]>('/reservations'),
+      me.role !== 'ACCOUNTANT' ? apiFetch<IncidentRow[]>('/incidents') : Promise.resolve([] as IncidentRow[]),
+      canSeeFinance ? apiFetch<SummaryReport>('/audit/reports/summary') : Promise.resolve(null),
+      canSeeFinance ? apiFetch<MonthlyBalance>('/billing/monthly-balance?months=6') : Promise.resolve(null),
     ]);
-    setUnits(u);
-    setPersons(p);
-    setReservations(r);
-    setIncidents(inc);
-    setSummary(rep);
+    const reason = (res: PromiseSettledResult<unknown>) =>
+      res.status === 'rejected'
+        ? res.reason instanceof Error
+          ? res.reason.message
+          : 'Error de conexión con la API.'
+        : null;
+    // Core data: if it fails, show an error state instead of empty counters ("0 unidades").
+    const coreError = reason(u) ?? reason(p) ?? reason(r);
+    setLoadError(coreError);
+    if (u.status === 'fulfilled') setUnits(u.value);
+    if (p.status === 'fulfilled') setPersons(p.value);
+    if (r.status === 'fulfilled') setReservations(r.value);
+    setIncidents(inc.status === 'fulfilled' ? inc.value : []);
+    setSummary(rep.status === 'fulfilled' ? rep.value : null);
+    setBalance(bal.status === 'fulfilled' ? bal.value : null);
+    setPartialErrors(
+      [
+        inc.status === 'rejected' ? 'incidencias' : null,
+        rep.status === 'rejected' ? 'resumen financiero' : null,
+        bal.status === 'rejected' ? 'balance mensual' : null,
+      ].filter((x): x is string => x !== null),
+    );
+    setLoading(false);
   }, [apiFetch, tenantId, me.role]);
 
   useEffect(() => {
@@ -237,6 +273,29 @@ export default function DashboardOverviewPage() {
     return <SuperAdminOverview />;
   }
 
+  if (loadError) {
+    return (
+      <section className="internal-page">
+        <div className="h-notice h-notice-err" role="alert">
+          <span>No se pudo cargar el resumen del edificio: {loadError}</span>
+          <button type="button" className="h-btn-outline" onClick={() => void load()}>
+            Reintentar
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (loading && units.length === 0) {
+    return (
+      <section className="internal-page">
+        <div className="h-panel" style={{ color: 'var(--muted-foreground)', fontSize: '13.5px' }}>
+          Cargando resumen del edificio…
+        </div>
+      </section>
+    );
+  }
+
   const occupiedUnits = units.filter((u) => u.occupancies.length > 0).length;
   const occupancyPct = units.length > 0 ? Math.round((occupiedUnits / units.length) * 100) : 0;
   const floorsCount = units.length > 0 ? new Set(units.map((u) => u.floor)).size : 0;
@@ -261,12 +320,13 @@ export default function DashboardOverviewPage() {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
+    timeZone: tenantTimezone,
   }).format(new Date());
 
   const firstName = me.fullName.split(' ')[0] ?? me.fullName;
 
-  const chartBars = [38, 46, 41, 52, 48, 56, 49, 60];
-  const chartLabels = ['May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const balanceMonths = balance?.months ?? [];
+  const chartMaxCents = balanceMonths.reduce((max, m) => Math.max(max, m.billedCents, m.collectedCents), 0);
 
   return (
     <section>
@@ -291,6 +351,15 @@ export default function DashboardOverviewPage() {
           )}
         </div>
       </div>
+
+      {partialErrors.length > 0 && (
+        <div className="h-notice h-notice-err" role="alert" style={{ marginBottom: '12px' }}>
+          <span>No se pudo cargar: {partialErrors.join(', ')}. Algunos indicadores pueden estar incompletos.</span>
+          <button type="button" className="h-btn-outline" onClick={() => void load()}>
+            Reintentar
+          </button>
+        </div>
+      )}
 
       <div className="dashboard-grid">
         <section className="panel balance-card">
@@ -428,7 +497,7 @@ export default function DashboardOverviewPage() {
           <div className="section-heading">
             <div>
               <h2 id="collection-title">Balance del edificio</h2>
-              <p>Alícuotas frente a cargos y recaudación</p>
+              <p>Alícuotas emitidas frente a pagos recaudados (últimos 6 meses)</p>
             </div>
             <Link href="/dashboard/billing" className="text-action" style={{ padding: '6px 10px', fontSize: '11px' }}>
               Finanzas <ArrowUpRight size={12} />
@@ -444,26 +513,50 @@ export default function DashboardOverviewPage() {
               Pendiente
             </span>
           </div>
-          <div className="chart-area" role="img" aria-label="Tendencia mensual del edificio">
-            <div className="y-labels">
-              <span>100%</span>
-              <span>75%</span>
-              <span>50%</span>
-              <span>25%</span>
-              <span>0%</span>
+          {me.role === 'GUARD' ? null : !balance ? (
+            <p style={{ fontSize: '12px', color: 'var(--muted-foreground)', margin: '10px 0' }}>
+              No se pudo cargar el balance mensual.
+            </p>
+          ) : chartMaxCents === 0 ? (
+            <p style={{ fontSize: '12px', color: 'var(--muted-foreground)', margin: '10px 0' }}>
+              Aún no hay alícuotas ni pagos registrados en los últimos 6 meses.
+            </p>
+          ) : (
+            <div
+              className="chart-area"
+              role="img"
+              aria-label={`Balance mensual: ${balanceMonths
+                .map((m) => `${formatMonthKey(m.month)} emitido ${compactUsd(m.billedCents)}, recaudado ${compactUsd(m.collectedCents)}`)
+                .join('; ')}`}
+            >
+              <div className="y-labels">
+                <span>{compactUsd(chartMaxCents)}</span>
+                <span>{compactUsd(Math.round(chartMaxCents * 0.75))}</span>
+                <span>{compactUsd(Math.round(chartMaxCents * 0.5))}</span>
+                <span>{compactUsd(Math.round(chartMaxCents * 0.25))}</span>
+                <span>{compactUsd(0)}</span>
+              </div>
+              <div className="bar-chart">
+                {balanceMonths.map((m) => {
+                  const top = Math.max(m.billedCents, m.collectedCents);
+                  const stackRatio = chartMaxCents > 0 ? top / chartMaxCents : 0;
+                  const collectedPct = top > 0 ? Math.round((Math.min(m.collectedCents, top) / top) * 100) : 0;
+                  return (
+                    <div className="bar-column" key={m.month} title={`${formatMonthKey(m.month, 'long')}: emitido ${compactUsd(m.billedCents)} · recaudado ${compactUsd(m.collectedCents)}`}>
+                      <div
+                        className="bar-stack"
+                        style={{ height: `calc((100% - 21px) * ${stackRatio.toFixed(4)})`, flexDirection: 'column-reverse' }}
+                      >
+                        <span className="bar-profit" style={{ height: `${collectedPct}%` }} />
+                        <span className="bar-loss" />
+                      </div>
+                      <small>{formatMonthOnly(m.month)}</small>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <div className="bar-chart">
-              {chartBars.map((height, index) => (
-                <div className="bar-column" key={chartLabels[index]}>
-                  <div className="bar-stack" style={{ height: `${height * 1.9}px` }}>
-                    <span className="bar-profit" style={{ height: `${Math.round(height * 1.1)}%` }} />
-                    <span className="bar-loss" />
-                  </div>
-                  <small>{chartLabels[index]}</small>
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
         </section>
 
         <div className="left-stack">
@@ -487,16 +580,14 @@ export default function DashboardOverviewPage() {
                 </p>
               ) : (
                 upcomingReservations.map((res, idx) => {
-                  const dt = new Date(res.startsAt);
-                  const day = String(dt.getDate()).padStart(2, '0');
-                  const month = new Intl.DateTimeFormat('es-EC', { month: 'short' })
-                    .format(dt)
+                  const day = formatDateTimeInZone(res.startsAt, tenantTimezone, { day: '2-digit' });
+                  const month = formatDateTimeInZone(res.startsAt, tenantTimezone, { month: 'short' })
                     .replace('.', '')
                     .toUpperCase();
-                  const time = new Intl.DateTimeFormat('es-EC', {
+                  const time = formatDateTimeInZone(res.startsAt, tenantTimezone, {
                     hour: '2-digit',
                     minute: '2-digit',
-                  }).format(dt);
+                  });
                   const areaNames =
                     res.amenities?.map((a) => a.amenity.name).join(' + ') || 'Área comunal';
                   return (

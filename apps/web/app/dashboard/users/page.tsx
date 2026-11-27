@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Pencil, Plus, Trash2, UserCog } from 'lucide-react';
+import { Info, Pencil, Trash2, UserCog } from 'lucide-react';
 import { StatusBadge } from '@noah/ui';
 import { HabitatDrawer, HabitatToast, ModuleHero, SearchableSelect } from '../../../components/habitat-ui';
 import { ApiClientError, authApi, type StaffProfile, type StaffTenant } from '../../../lib/api/auth';
@@ -18,7 +18,8 @@ export default function StaffUsersPage() {
   const { token, me, apiFetch } = useDashboard();
   const [users, setUsers] = useState<StaffProfile[]>([]);
   const [availableTenants, setAvailableTenants] = useState<StaffTenant[]>([]);
-  const [drawer, setDrawer] = useState<'none' | 'invite' | 'edit'>('none');
+  // Staff onboarding is script-only (no e-mail delivery): the dashboard only edits existing users.
+  const [drawer, setDrawer] = useState<'none' | 'edit'>('none');
   const [editing, setEditing] = useState<StaffProfile | null>(null);
 
   const [email, setEmail] = useState('');
@@ -29,33 +30,30 @@ export default function StaffUsersPage() {
   const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const isSuperAdmin = me.role === 'SUPERADMIN';
   const canManageUsers = me.role === 'SUPERADMIN' || me.role === 'ADMIN';
 
   const loadData = useCallback(async () => {
     if (!canManageUsers) return;
-    const [list, tenants] = await Promise.all([
-      authApi.listStaffUsers(token),
-      apiFetch<StaffTenant[]>('/tenants'),
-    ]);
-    setUsers(list);
-    setAvailableTenants(tenants);
+    try {
+      const [list, tenants] = await Promise.all([
+        authApi.listStaffUsers(token),
+        apiFetch<StaffTenant[]>('/tenants'),
+      ]);
+      setUsers(list);
+      setAvailableTenants(tenants);
+      setPageError(null);
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : 'No se pudo cargar la lista de usuarios.');
+    }
   }, [canManageUsers, token, apiFetch]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
-
-  function openInvite() {
-    setEditing(null);
-    setEmail('');
-    setFullName('');
-    setRole(isSuperAdmin ? 'ADMIN' : 'ACCOUNTANT');
-    setSelectedTenantIds(availableTenants[0] ? [availableTenants[0].id] : []);
-    setError(null);
-    setDrawer('invite');
-  }
 
   function openEdit(u: StaffProfile) {
     setEditing(u);
@@ -80,16 +78,9 @@ export default function StaffUsersPage() {
       setError('Debes asignar al menos un edificio a este usuario.');
       return;
     }
+    setSaving(true);
     try {
-      if (drawer === 'invite') {
-        await authApi.inviteStaffUser(token, {
-          email,
-          fullName,
-          role,
-          tenantIds: role === 'SUPERADMIN' ? [] : selectedTenantIds,
-        });
-        setToast('Invitación enviada (válida por 72 horas).');
-      } else if (editing) {
+      if (editing) {
         await authApi.updateStaffUser(token, editing.id, {
           fullName,
           role,
@@ -101,21 +92,33 @@ export default function StaffUsersPage() {
       await loadData();
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : 'No se pudo guardar el usuario.');
+    } finally {
+      setSaving(false);
     }
   }
 
   async function handleDeactivate(userId: string) {
     if (!window.confirm('¿Desactivar este usuario y cerrar todas sus sesiones activas?')) return;
-    await authApi.deactivateStaffUser(token, userId);
-    setToast('Usuario desactivado y sesiones revocadas.');
-    await loadData();
+    setPageError(null);
+    try {
+      await authApi.deactivateStaffUser(token, userId);
+      setToast('Usuario desactivado y sesiones revocadas.');
+      await loadData();
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : 'No se pudo desactivar el usuario.');
+    }
   }
 
   async function handleDeleteUser(u: StaffProfile) {
     if (!window.confirm(`¿Eliminar permanentemente a ${u.fullName} (${u.email})? Esta acción no se puede deshacer.`)) return;
-    await authApi.deleteStaffUser(token, u.id);
-    setToast(`Usuario ${u.fullName} eliminado.`);
-    await loadData();
+    setPageError(null);
+    try {
+      await authApi.deleteStaffUser(token, u.id);
+      setToast(`Usuario ${u.fullName} eliminado.`);
+      await loadData();
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : 'No se pudo eliminar el usuario.');
+    }
   }
 
   return (
@@ -125,20 +128,23 @@ export default function StaffUsersPage() {
         title={isSuperAdmin ? 'Administradores y usuarios' : 'Equipo de mis edificios'}
         description={
           isSuperAdmin
-            ? 'Crea usuarios Administradores y asígnales uno o varios edificios para que gestionen su operación.'
-            : 'Crea Contadores y Guardias y asígnales acceso a uno o varios de los edificios que administras.'
+            ? 'Asigna edificios a los Administradores, edita sus accesos o desactívalos.'
+            : 'Edita los accesos de Contadores y Guardias de los edificios que administras, o desactívalos.'
         }
         icon={UserCog}
-        actions={
-          canManageUsers && (
-            <button type="button" className="h-btn-dark" onClick={openInvite}>
-              <Plus size={15} /> {isSuperAdmin ? 'Nuevo administrador' : 'Nuevo miembro'}
-            </button>
-          )
-        }
       />
 
       {toast && <HabitatToast type="ok" text={toast} onClose={() => setToast(null)} />}
+      {pageError && <HabitatToast type="err" text={pageError} onClose={() => setPageError(null)} />}
+
+      {canManageUsers && (
+        <div className="h-panel" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', fontSize: '13px' }}>
+          <Info size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+          <span>
+            Los usuarios nuevos se crean con el script <code>pnpm --filter @noah/api staff:create</code> (ver README).
+          </span>
+        </div>
+      )}
 
       {!canManageUsers ? (
         <div className="h-panel" style={{ color: 'var(--muted-foreground)', fontSize: '13.5px' }}>
@@ -164,7 +170,7 @@ export default function StaffUsersPage() {
                   <td colSpan={7} style={{ textAlign: 'center', padding: '24px', color: 'var(--muted-foreground)' }}>
                     {isSuperAdmin
                       ? 'Aún no hay administradores registrados.'
-                      : 'Aún no has invitado Contadores ni Guardias a tus edificios.'}
+                      : 'Aún no hay Contadores ni Guardias asignados a tus edificios.'}
                   </td>
                 </tr>
               ) : (
@@ -227,13 +233,7 @@ export default function StaffUsersPage() {
 
       <HabitatDrawer
         open={drawer !== 'none'}
-        title={
-          drawer === 'invite'
-            ? isSuperAdmin
-              ? 'Invitar administrador'
-              : 'Invitar miembro de equipo'
-            : `Editar accesos de ${editing?.fullName ?? ''}`
-        }
+        title={`Editar accesos de ${editing?.fullName ?? ''}`}
         subtitle={
           isSuperAdmin
             ? 'Selecciona el rol y los edificios que este usuario administrará.'
@@ -252,7 +252,7 @@ export default function StaffUsersPage() {
             <input
               type="email"
               required
-              disabled={drawer === 'edit'}
+              disabled
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="h-input"
@@ -319,8 +319,8 @@ export default function StaffUsersPage() {
             <button type="button" className="h-btn-outline" onClick={() => setDrawer('none')}>
               Cancelar
             </button>
-            <button type="submit" className="h-btn-dark">
-              {drawer === 'invite' ? 'Enviar invitación (72 h)' : 'Guardar cambios'}
+            <button type="submit" className="h-btn-dark" disabled={saving}>
+              {saving ? 'Guardando…' : 'Guardar cambios'}
             </button>
           </div>
         </form>

@@ -8,6 +8,7 @@ import {
   buildComboKey,
   validateAmenityInput,
 } from './catalog.validation.js';
+import { computeAutoMonthlyFeeCents } from '../cadastre/monthly-fee.js';
 
 export interface UpsertSettingsInput {
   monthlyFeePerSqmCents?: number;
@@ -20,6 +21,7 @@ export interface UpsertSettingsInput {
   generalAdvanceHours: number;
   shortNoticeAdvanceMinutes: number;
   frequencyWeekStart?: string;
+  monthlyFeeDueDay?: number;
   cancellationPolicy?: Record<string, unknown> | null;
 }
 
@@ -79,7 +81,9 @@ export class CatalogService {
       monthlyFeePerSqmCents < 0 ||
       input.depositRequiredCents < 0 ||
       input.arrearsToleranceMonths < 0 ||
-      input.paymentProofDeadlineMinutes <= 0
+      input.paymentProofDeadlineMinutes <= 0 ||
+      (input.monthlyFeeDueDay !== undefined &&
+        (!Number.isInteger(input.monthlyFeeDueDay) || input.monthlyFeeDueDay < 1 || input.monthlyFeeDueDay > 31))
     ) {
       throw new DomainError('INVALID_SETTINGS', 'Los parámetros financieros contienen valores inválidos.', 422);
     }
@@ -97,8 +101,11 @@ export class CatalogService {
         generalAdvanceHours: input.generalAdvanceHours,
         shortNoticeAdvanceMinutes: input.shortNoticeAdvanceMinutes,
         frequencyWeekStart: input.frequencyWeekStart ?? 'MONDAY',
+        // Omitted = keep the stored value (DB default on create).
+        ...(input.monthlyFeeDueDay !== undefined ? { monthlyFeeDueDay: input.monthlyFeeDueDay } : {}),
+        // null (explicit clear) and undefined both store JSON null; Prisma rejects a raw null here.
         cancellationPolicy:
-          input.cancellationPolicy !== undefined
+          input.cancellationPolicy !== undefined && input.cancellationPolicy !== null
             ? (input.cancellationPolicy as Prisma.InputJsonValue)
             : Prisma.JsonNull,
       };
@@ -109,6 +116,33 @@ export class CatalogService {
           });
 
       await this.recordAudit(tx, ctx, 'SETTINGS_UPDATED', 'TenantSettings', saved.id, before, saved);
+
+      // Automatic unit fees follow the building rate; manual fees are left untouched.
+      if ((before?.monthlyFeePerSqmCents ?? 0) !== saved.monthlyFeePerSqmCents) {
+        const autoUnits = await tx.unit.findMany({
+          where: { tenantId: ctx.tenantId, monthlyFeeIsManual: false },
+          select: { id: true, areaSqm: true, monthlyFeeCents: true },
+        });
+        let recalculated = 0;
+        for (const unit of autoUnits) {
+          const next = computeAutoMonthlyFeeCents(unit.areaSqm, saved.monthlyFeePerSqmCents);
+          if (next !== unit.monthlyFeeCents) {
+            await tx.unit.update({ where: { id: unit.id }, data: { monthlyFeeCents: next } });
+            recalculated++;
+          }
+        }
+        if (recalculated > 0) {
+          await this.recordAudit(
+            tx,
+            ctx,
+            'UNIT_FEES_RECALCULATED',
+            'TenantSettings',
+            saved.id,
+            { monthlyFeePerSqmCents: before?.monthlyFeePerSqmCents ?? 0 },
+            { monthlyFeePerSqmCents: saved.monthlyFeePerSqmCents, recalculated },
+          );
+        }
+      }
       return saved;
     });
   }
@@ -366,9 +400,20 @@ export class CatalogService {
 
   async upsertParkingConfig(
     ctx: TenantContext,
-    input: { spots: number; freeMinutes: number; overtimeFeeCentsPerHour: number; rounding?: string },
+    input: {
+      spots: number;
+      freeMinutes: number;
+      overtimeFeeCentsPerHour: number;
+      rounding?: string;
+      alertMarginMinutes?: number;
+    },
   ) {
-    if (input.spots < 0 || input.freeMinutes < 0 || input.overtimeFeeCentsPerHour < 0) {
+    if (
+      input.spots < 0 ||
+      input.freeMinutes < 0 ||
+      input.overtimeFeeCentsPerHour < 0 ||
+      (input.alertMarginMinutes !== undefined && input.alertMarginMinutes < 0)
+    ) {
       throw new DomainError('INVALID_PARKING_CONFIG', 'Configuración de parqueaderos inválida.', 422);
     }
 
@@ -379,6 +424,7 @@ export class CatalogService {
         freeMinutes: input.freeMinutes,
         overtimeFeeCentsPerHour: input.overtimeFeeCentsPerHour,
         rounding: input.rounding ?? 'CEIL_HOUR',
+        ...(input.alertMarginMinutes !== undefined ? { alertMarginMinutes: input.alertMarginMinutes } : {}),
       };
       const saved = before
         ? await tx.parkingConfig.update({ where: { id: before.id }, data })

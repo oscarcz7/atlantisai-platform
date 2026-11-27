@@ -6,6 +6,8 @@ import { AccessService } from '../access/access.service.js';
 import { assertReservationInTenant, assertUnitInTenant } from '../../common/prisma/tenant-refs.js';
 import { computeArrearsMonths, reservationLedgerRef } from './arrears.js';
 import { ensureCleaningCharge } from './reservation-ledger.js';
+import { resolveMonthlyFeePeriod, summarizeMonthlyBalance } from './monthly-fees.js';
+import { monthKeyInZone, monthStartUtc, shiftMonthKey } from '../../common/time/zoned-time.js';
 
 /** Sum of CLEANING charges (amount due before confirmation). Falls back to total if unknown. */
 function upfrontCentsFromCharges(charges: unknown, totalCents: number): number {
@@ -135,9 +137,32 @@ export class BillingService {
     });
   }
 
-  async generateMonthlyFees(ctx: TenantContext, billingMonth: string, dueDateIso: string) {
-    const dueDate = new Date(dueDateIso);
+  /**
+   * Generates the MONTHLY_FEE charge of every active unit for `billingMonth` (idempotent per unit/month).
+   * When omitted, the month is the building's current month (tenant.timezone) and the due date is
+   * `TenantSettings.monthlyFeeDueDay` of that month at 23:59:59 local time.
+   */
+  async generateMonthlyFees(
+    ctx: TenantContext,
+    input: { billingMonth?: string; dueDate?: string } = {},
+    now: Date = new Date(),
+  ) {
     return this.prisma.withTenant(ctx, async (tx) => {
+      const [tenant, settings] = await Promise.all([
+        tx.tenant.findUnique({ where: { id: ctx.tenantId }, select: { timezone: true } }),
+        tx.tenantSettings.findUnique({ where: { tenantId: ctx.tenantId } }),
+      ]);
+      if (!tenant) {
+        throw new DomainError('TENANT_NOT_FOUND', 'Edificio no encontrado.', 404);
+      }
+      const { billingMonth, dueDate } = resolveMonthlyFeePeriod({
+        billingMonth: input.billingMonth,
+        dueDate: input.dueDate,
+        timeZone: tenant.timezone,
+        dueDay: settings?.monthlyFeeDueDay,
+        now,
+      });
+
       // Serialize per (tenant, month): concurrent runs would both pass the "exists" check.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`monthly-fees:${ctx.tenantId}:${billingMonth}`}))`;
       const units = await tx.unit.findMany({
@@ -167,9 +192,46 @@ export class BillingService {
       }
       await this.recordAudit(tx, ctx, 'MONTHLY_FEES_GENERATED', 'Billing', ctx.tenantId, null, {
         billingMonth,
+        dueDate: dueDate.toISOString(),
         created,
       });
-      return { billingMonth, created };
+      return { billingMonth, dueDate: dueDate.toISOString(), created };
+    });
+  }
+
+  /**
+   * Building balance for the last `months` months (building timezone): MONTHLY_FEE billed per billing
+   * month vs PAYMENT collected per month of registration. Amounts in cents (collected is positive).
+   */
+  async getMonthlyBalance(ctx: TenantContext, months = 6, now: Date = new Date()) {
+    const count = Math.min(24, Math.max(1, Math.trunc(months)));
+    return this.prisma.withTenant(ctx, async (tx) => {
+      const tenant = await tx.tenant.findUnique({ where: { id: ctx.tenantId }, select: { timezone: true } });
+      if (!tenant) {
+        throw new DomainError('TENANT_NOT_FOUND', 'Edificio no encontrado.', 404);
+      }
+      const currentMonth = monthKeyInZone(now, tenant.timezone);
+      const monthKeys = Array.from({ length: count }, (_, i) => shiftMonthKey(currentMonth, i - (count - 1)));
+      const from = monthStartUtc(monthKeys[0]!, tenant.timezone);
+      const to = monthStartUtc(shiftMonthKey(currentMonth, 1), tenant.timezone);
+      const [fees, payments] = await Promise.all([
+        tx.ledgerEntry.findMany({
+          where: {
+            tenantId: ctx.tenantId,
+            type: 'MONTHLY_FEE',
+            OR: monthKeys.map((m) => ({ reference: { startsWith: `MONTHLY_FEE:${m}:` } })),
+          },
+          select: { type: true, amountCents: true, reference: true, dueDate: true, createdAt: true },
+        }),
+        tx.ledgerEntry.findMany({
+          where: { tenantId: ctx.tenantId, type: 'PAYMENT', createdAt: { gte: from, lt: to } },
+          select: { type: true, amountCents: true, reference: true, dueDate: true, createdAt: true },
+        }),
+      ]);
+      return {
+        timezone: tenant.timezone,
+        months: summarizeMonthlyBalance([...fees, ...payments], monthKeys, tenant.timezone),
+      };
     });
   }
 

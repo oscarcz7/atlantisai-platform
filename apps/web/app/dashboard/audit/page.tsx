@@ -5,6 +5,7 @@ import { Activity, Download } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
 import { DomainTag, ModuleHero } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
+import { formatDateTimeInZone } from '../../../lib/zoned-time';
 import { downloadCsv } from '../../../lib/export-csv';
 import {
   getAuditActionLabel,
@@ -29,7 +30,7 @@ interface ReportSummary {
 }
 
 export default function AuditPage() {
-  const { tenantId, apiFetch } = useDashboard();
+  const { tenantId, tenantTimezone, apiFetch } = useDashboard();
   const [logs, setLogs] = useState<AuditRow[]>([]);
   const [summary, setSummary] = useState<ReportSummary | null>(null);
 
@@ -149,7 +150,7 @@ export default function AuditPage() {
                 return (
                   <tr key={l.id}>
                     <td style={{ fontSize: '12.5px', color: 'var(--muted-foreground)' }}>
-                      {new Date(l.createdAt).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })}
+                      {formatDateTimeInZone(l.createdAt, tenantTimezone, { dateStyle: 'short', timeStyle: 'medium' })}
                     </td>
                     <td style={{ fontWeight: 600 }} title={l.action}>
                       {getAuditActionLabel(l.action)}

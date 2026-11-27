@@ -43,7 +43,7 @@ export interface AuthTokensResult {
     fullName: string;
     role: StaffRole;
     totpEnabled: boolean;
-    tenants: Array<{ id: string; code: string; name: string }>;
+    tenants: Array<{ id: string; code: string; name: string; timezone: string }>;
   };
 }
 
@@ -99,7 +99,7 @@ export class AuthService {
     const user = await this.prisma.staffUser.findUnique({
       where: { email },
       include: {
-        tenants: { include: { tenant: { select: { id: true, code: true, name: true } } } },
+        tenants: { include: { tenant: { select: { id: true, code: true, name: true, timezone: true } } } },
       },
     });
 
@@ -255,7 +255,7 @@ export class AuthService {
     const user = await this.prisma.staffUser.findUnique({
       where: { id: userId },
       include: {
-        tenants: { include: { tenant: { select: { id: true, code: true, name: true } } } },
+        tenants: { include: { tenant: { select: { id: true, code: true, name: true, timezone: true } } } },
       },
     });
     if (!user || !user.isActive || !user.totpSecretEnc) {
@@ -313,7 +313,7 @@ export class AuthService {
       include: {
         staffUser: {
           include: {
-            tenants: { include: { tenant: { select: { id: true, code: true, name: true } } } },
+            tenants: { include: { tenant: { select: { id: true, code: true, name: true, timezone: true } } } },
           },
         },
       },
@@ -520,7 +520,7 @@ export class AuthService {
     const user = await this.prisma.staffUser.findUnique({
       where: { id: userId },
       include: {
-        tenants: { include: { tenant: { select: { id: true, code: true, name: true } } } },
+        tenants: { include: { tenant: { select: { id: true, code: true, name: true, timezone: true } } } },
       },
     });
     if (!user || !user.isActive) {
@@ -539,11 +539,11 @@ export class AuthService {
 
   private async resolveUserTenants(user: {
     role: StaffRole;
-    tenants: Array<{ tenant: { id: string; code: string; name: string } }>;
-  }): Promise<Array<{ id: string; code: string; name: string }>> {
+    tenants: Array<{ tenant: { id: string; code: string; name: string; timezone: string } }>;
+  }): Promise<Array<{ id: string; code: string; name: string; timezone: string }>> {
     if (user.role === 'SUPERADMIN') {
       return this.prisma.tenant.findMany({
-        select: { id: true, code: true, name: true },
+        select: { id: true, code: true, name: true, timezone: true },
         orderBy: { name: 'asc' },
       });
     }
@@ -557,7 +557,7 @@ export class AuthService {
       fullName: string;
       role: StaffRole;
       totpEnabled: boolean;
-      tenants: Array<{ tenant: { id: string; code: string; name: string } }>;
+      tenants: Array<{ tenant: { id: string; code: string; name: string; timezone: string } }>;
     },
     meta: RequestMeta,
     now: Date,

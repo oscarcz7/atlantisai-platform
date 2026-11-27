@@ -23,12 +23,15 @@ export const PAYMENT_PROOF_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as con
 export type PaymentProofStatus = (typeof PAYMENT_PROOF_STATUSES)[number];
 
 export class GenerateMonthlyFeesDto {
-  /** YYYY-MM (from the dashboard's month picker). */
+  /** YYYY-MM. Omitted = current month in the building's timezone. */
+  @IsOptional()
   @Matches(/^\d{4}-(0[1-9]|1[0-2])$/, { message: 'billingMonth debe tener formato YYYY-MM.' })
-  billingMonth!: string;
+  billingMonth?: string;
 
+  /** Omitted = TenantSettings.monthlyFeeDueDay of the billing month at 23:59:59 (building timezone). */
+  @IsOptional()
   @IsISO8601(ISO_OPTS)
-  dueDate!: string;
+  dueDate?: string;
 }
 
 export class RecordDepositMovementDto {

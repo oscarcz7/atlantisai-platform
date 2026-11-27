@@ -162,6 +162,7 @@ export class UpsertReaderDto implements UpsertReaderInput {
 }
 
 export class OpenDoorDto {
+  // Emptiness (incl. whitespace-only) is rejected by the service with OPEN_DOOR_REASON_REQUIRED (422).
   @IsOptional()
   @IsString()
   @MaxLength(500)

@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DomainError, generateUuidV7, maskNationalId, type TenantContext } from '@noah/domain';
 import { calculateParkingOvertime } from '@noah/rules';
+import { computeParkingLiveStatus } from './parking-live.js';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { FieldEncryptionService } from '../auth/crypto/field-encryption.service.js';
 import { assertReservationInTenant, assertUnitInTenant } from '../../common/prisma/tenant-refs.js';
@@ -12,8 +13,13 @@ export class VisitsService {
     @Inject(FieldEncryptionService) private readonly encryption: FieldEncryptionService,
   ) {}
 
-  async list(ctx: TenantContext, search?: string) {
+  /**
+   * Latest visits. Visits currently parked (checked in, spot assigned, not checked out) include
+   * `parking`: live minutes parked, free window, overtime so far and an alert flag (ParkingConfig).
+   */
+  async list(ctx: TenantContext, search?: string, now: Date = new Date()) {
     return this.prisma.withTenant(ctx, async (tx) => {
+      const config = await tx.parkingConfig.findUnique({ where: { tenantId: ctx.tenantId } });
       const visits = await tx.visit.findMany({
         where: {
           tenantId: ctx.tenantId,
@@ -41,11 +47,15 @@ export class VisitsService {
         checkInAt: v.checkInAt,
         checkOutAt: v.checkOutAt,
         overtimeCents: v.overtimeCents,
+        parking:
+          config && v.parkingSpot !== null && v.checkInAt && !v.checkOutAt
+            ? computeParkingLiveStatus(v.checkInAt, now, config)
+            : null,
       }));
     });
   }
 
-  async getParkingStatus(ctx: TenantContext) {
+  async getParkingStatus(ctx: TenantContext, now: Date = new Date()) {
     return this.prisma.withTenant(ctx, async (tx) => {
       const config = await tx.parkingConfig.findUnique({ where: { tenantId: ctx.tenantId } });
       const activeVisits = await tx.visit.findMany({
@@ -69,13 +79,18 @@ export class VisitsService {
           visitorName: occupant?.visitorName ?? null,
           plate: occupant?.plate ?? null,
           checkInAt: occupant?.checkInAt ?? null,
+          parking:
+            config && occupant?.checkInAt ? computeParkingLiveStatus(occupant.checkInAt, now, config) : null,
         };
       });
 
+      // No hardcoded fallbacks: a building without parking configuration reports nulls.
       return {
+        configured: Boolean(config),
         totalSpots,
-        freeMinutes: config?.freeMinutes ?? 180,
-        overtimeFeeCentsPerHour: config?.overtimeFeeCentsPerHour ?? 150,
+        freeMinutes: config?.freeMinutes ?? null,
+        overtimeFeeCentsPerHour: config?.overtimeFeeCentsPerHour ?? null,
+        alertMarginMinutes: config?.alertMarginMinutes ?? null,
         spots,
       };
     });

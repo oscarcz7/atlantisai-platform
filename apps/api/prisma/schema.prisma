@@ -293,6 +293,8 @@ model TenantSettings {
   generalAdvanceHours         Int      @map("general_advance_hours")
   shortNoticeAdvanceMinutes   Int      @map("short_notice_advance_minutes")
   frequencyWeekStart          String   @default("MONDAY") @map("frequency_week_start")
+  /// Day of the billing month (1-31, clamped to the month's last day) on which the monthly fee is due.
+  monthlyFeeDueDay            Int      @default(10) @map("monthly_fee_due_day")
   cancellationPolicy          Json?    @map("cancellation_policy")
   createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                   DateTime @updatedAt @map("updated_at") @db.Timestamptz
@@ -393,6 +395,8 @@ model ParkingConfig {
   freeMinutes             Int      @map("free_minutes")
   overtimeFeeCentsPerHour Int      @map("overtime_fee_cents_per_hour")
   rounding                String   @default("CEIL_HOUR")
+  /// Minutes before the free parking window ends at which the guard console raises an alert.
+  alertMarginMinutes      Int      @default(15) @map("alert_margin_minutes")
   createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt               DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -412,6 +416,8 @@ model Unit {
   areaSqm         Float?   @map("area_sqm")
   bedrooms        Int      @default(1)
   monthlyFeeCents Int      @default(0) @map("monthly_fee_cents")
+  /// true when the admin entered the fee explicitly; false = derived from areaSqm × monthlyFeePerSqmCents.
+  monthlyFeeIsManual Boolean @default(false) @map("monthly_fee_is_manual")
   isActive        Boolean  @default(true) @map("is_active")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz

@@ -4,6 +4,8 @@ export interface StaffTenant {
   id: string;
   code: string;
   name: string;
+  /** IANA timezone of the building (dates are shown and entered in this zone). */
+  timezone?: string;
 }
 
 export interface StaffProfile {

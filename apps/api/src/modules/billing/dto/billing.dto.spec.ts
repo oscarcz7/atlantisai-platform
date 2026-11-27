@@ -58,6 +58,11 @@ describe('GenerateMonthlyFeesDto', () => {
     ).toEqual([]);
   });
 
+  it('accepts an empty body (month and due date resolved by the server in the building timezone)', async () => {
+    expect(await errorsFor(GenerateMonthlyFeesDto, {})).toEqual([]);
+    expect(await errorsFor(GenerateMonthlyFeesDto, { billingMonth: '2026-12' })).toEqual([]);
+  });
+
   it('rejects malformed months and dates', async () => {
     expect(await errorsFor(GenerateMonthlyFeesDto, { billingMonth: '2026-13', dueDate: '2026-12-10' })).toContain(
       'billingMonth',

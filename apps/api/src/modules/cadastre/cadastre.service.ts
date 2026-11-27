@@ -11,6 +11,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { FieldEncryptionService } from '../auth/crypto/field-encryption.service.js';
+import { computeAutoMonthlyFeeCents, resolveUnitMonthlyFee } from './monthly-fee.js';
 import { assertPersonInTenant, assertUnitInTenant, assertUnitTypeInTenant } from '../../common/prisma/tenant-refs.js';
 
 export interface ImportRowInput {
@@ -55,6 +56,22 @@ export function sanitizeAuditPayload(payload: unknown): unknown {
   return payload;
 }
 
+function assertFeeInput(input: { monthlyFeeCents?: number; monthlyFeeMode?: 'AUTO' | 'MANUAL' }): void {
+  if (input.monthlyFeeCents !== undefined && input.monthlyFeeCents < 0) {
+    throw new DomainError('INVALID_MONTHLY_FEE', 'La alícuota no puede ser negativa.', 422);
+  }
+  if (input.monthlyFeeMode === 'MANUAL' && input.monthlyFeeCents === undefined) {
+    throw new DomainError('MONTHLY_FEE_REQUIRED', 'Indica el valor de la alícuota manual.', 422);
+  }
+  if (input.monthlyFeeMode === 'AUTO' && input.monthlyFeeCents !== undefined) {
+    throw new DomainError(
+      'MONTHLY_FEE_MODE_CONFLICT',
+      'No envíes un valor de alícuota cuando eliges el cálculo automático.',
+      422,
+    );
+  }
+}
+
 @Injectable()
 export class CadastreService {
   constructor(
@@ -87,17 +104,33 @@ export class CadastreService {
     });
   }
 
+  /**
+   * Units with their stored monthly fee, whether it was entered manually, and the automatic fee
+   * (area × building rate) so the dashboard only displays values computed here.
+   */
   async listUnits(ctx: TenantContext) {
-    return this.prisma.withTenant(ctx, (tx) =>
-      tx.unit.findMany({
-        where: { tenantId: ctx.tenantId },
-        include: {
-          unitType: true,
-          occupancies: { include: { person: { select: { id: true, fullName: true, waPhone: true } } } },
-        },
-        orderBy: [{ floor: 'asc' }, { number: 'asc' }],
-      }),
-    );
+    return this.prisma.withTenant(ctx, async (tx) => {
+      const [units, settings] = await Promise.all([
+        tx.unit.findMany({
+          where: { tenantId: ctx.tenantId },
+          include: {
+            unitType: true,
+            occupancies: { include: { person: { select: { id: true, fullName: true, waPhone: true } } } },
+          },
+          orderBy: [{ floor: 'asc' }, { number: 'asc' }],
+        }),
+        tx.tenantSettings.findUnique({
+          where: { tenantId: ctx.tenantId },
+          select: { monthlyFeePerSqmCents: true },
+        }),
+      ]);
+      const rate = settings?.monthlyFeePerSqmCents ?? 0;
+      return units.map((u) => ({
+        ...u,
+        autoMonthlyFeeCents: computeAutoMonthlyFeeCents(u.areaSqm, rate),
+        monthlyFeePerSqmCents: rate,
+      }));
+    });
   }
 
   async getUnitDetail(ctx: TenantContext, unitId: string, at: Date = new Date()) {
@@ -147,11 +180,10 @@ export class CadastreService {
       areaSqm?: number | null;
       bedrooms?: number;
       monthlyFeeCents?: number;
+      monthlyFeeMode?: 'AUTO' | 'MANUAL';
     },
   ) {
-    if (input.monthlyFeeCents !== undefined && input.monthlyFeeCents < 0) {
-      throw new DomainError('INVALID_MONTHLY_FEE', 'La alícuota no puede ser negativa.', 422);
-    }
+    assertFeeInput(input);
     if (input.areaSqm !== undefined && input.areaSqm !== null && input.areaSqm < 0) {
       throw new DomainError('INVALID_AREA', 'El metraje no puede ser negativo.', 422);
     }
@@ -174,13 +206,12 @@ export class CadastreService {
 
       const areaSqm = input.areaSqm ?? null;
       const bedrooms = input.bedrooms ?? unitType.bedrooms ?? 1;
-      const feePerSqm = settings?.monthlyFeePerSqmCents ?? 0;
-      const monthlyFeeCents =
-        input.monthlyFeeCents !== undefined
-          ? input.monthlyFeeCents
-          : areaSqm !== null && areaSqm > 0 && feePerSqm > 0
-            ? Math.round(areaSqm * feePerSqm)
-            : 0;
+      const fee = resolveUnitMonthlyFee({
+        monthlyFeeCents: input.monthlyFeeCents,
+        mode: input.monthlyFeeMode,
+        areaSqm,
+        feePerSqmCents: settings?.monthlyFeePerSqmCents ?? 0,
+      });
 
       const created = await tx.unit.create({
         data: {
@@ -191,7 +222,8 @@ export class CadastreService {
           unitTypeId: input.unitTypeId,
           areaSqm,
           bedrooms,
-          monthlyFeeCents,
+          monthlyFeeCents: fee.monthlyFeeCents,
+          monthlyFeeIsManual: fee.monthlyFeeIsManual,
         },
       });
       await this.recordAudit(tx, ctx, 'UNIT_CREATED', 'Unit', created.id, null, created);
@@ -209,12 +241,11 @@ export class CadastreService {
       areaSqm?: number | null;
       bedrooms?: number;
       monthlyFeeCents?: number;
+      monthlyFeeMode?: 'AUTO' | 'MANUAL';
       isActive?: boolean;
     },
   ) {
-    if (input.monthlyFeeCents !== undefined && input.monthlyFeeCents < 0) {
-      throw new DomainError('INVALID_MONTHLY_FEE', 'La alícuota no puede ser negativa.', 422);
-    }
+    assertFeeInput(input);
     if (input.areaSqm !== undefined && input.areaSqm !== null && input.areaSqm < 0) {
       throw new DomainError('INVALID_AREA', 'El metraje no puede ser negativo.', 422);
     }
@@ -227,13 +258,14 @@ export class CadastreService {
         await assertUnitTypeInTenant(tx, ctx.tenantId, input.unitTypeId);
       }
       const nextArea = input.areaSqm !== undefined ? input.areaSqm : existing.areaSqm;
-      let nextMonthlyFee = input.monthlyFeeCents;
-      if (nextMonthlyFee === undefined && input.areaSqm !== undefined && nextArea !== null && nextArea > 0) {
-        const settings = await tx.tenantSettings.findUnique({ where: { tenantId: ctx.tenantId } });
-        if (settings && settings.monthlyFeePerSqmCents > 0) {
-          nextMonthlyFee = Math.round(nextArea * settings.monthlyFeePerSqmCents);
-        }
-      }
+      const settings = await tx.tenantSettings.findUnique({ where: { tenantId: ctx.tenantId } });
+      const fee = resolveUnitMonthlyFee({
+        monthlyFeeCents: input.monthlyFeeCents,
+        mode: input.monthlyFeeMode,
+        areaSqm: nextArea,
+        feePerSqmCents: settings?.monthlyFeePerSqmCents ?? 0,
+        current: { monthlyFeeCents: existing.monthlyFeeCents, monthlyFeeIsManual: existing.monthlyFeeIsManual },
+      });
 
       const updated = await tx.unit.update({
         where: { id: unitId },
@@ -243,7 +275,8 @@ export class CadastreService {
           ...(input.unitTypeId !== undefined ? { unitTypeId: input.unitTypeId } : {}),
           ...(input.areaSqm !== undefined ? { areaSqm: input.areaSqm } : {}),
           ...(input.bedrooms !== undefined ? { bedrooms: input.bedrooms } : {}),
-          ...(nextMonthlyFee !== undefined ? { monthlyFeeCents: nextMonthlyFee } : {}),
+          monthlyFeeCents: fee.monthlyFeeCents,
+          monthlyFeeIsManual: fee.monthlyFeeIsManual,
           ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         },
       });
@@ -479,21 +512,36 @@ export class CadastreService {
     return this.prisma.withTenant(ctx, async (tx) => {
       const unitTypes = await tx.unitType.findMany({ where: { tenantId: ctx.tenantId } });
       const unitTypeByCode = new Map(unitTypes.map((ut) => [ut.code, ut.id]));
+      const importSettings = await tx.tenantSettings.findUnique({
+        where: { tenantId: ctx.tenantId },
+        select: { monthlyFeePerSqmCents: true },
+      });
+      const feePerSqmCents = importSettings?.monthlyFeePerSqmCents ?? 0;
       let imported = 0;
 
       for (const row of rows) {
         const unitNumber = row.unitNumber.trim().toUpperCase();
         const unitTypeId = unitTypeByCode.get(row.unitTypeCode.trim().toUpperCase())!;
+        const existingUnit = await tx.unit.findUnique({
+          where: { tenantId_number: { tenantId: ctx.tenantId, number: unitNumber } },
+          select: { areaSqm: true },
+        });
+        // A fee in the file is an explicit (manual) amount; otherwise the automatic rule applies.
+        const fee = resolveUnitMonthlyFee({
+          monthlyFeeCents: row.monthlyFeeCents,
+          areaSqm: existingUnit?.areaSqm ?? null,
+          feePerSqmCents: feePerSqmCents,
+        });
         const unit = await tx.unit.upsert({
           where: { tenantId_number: { tenantId: ctx.tenantId, number: unitNumber } },
-          update: { floor: row.floor, unitTypeId, monthlyFeeCents: row.monthlyFeeCents ?? 0 },
+          update: { floor: row.floor, unitTypeId, ...fee },
           create: {
             id: generateUuidV7(),
             tenantId: ctx.tenantId,
             number: unitNumber,
             floor: row.floor,
             unitTypeId,
-            monthlyFeeCents: row.monthlyFeeCents ?? 0,
+            ...fee,
           },
         });
 

@@ -5,6 +5,13 @@ import { Check, FileSpreadsheet, Plus, Receipt, X } from 'lucide-react';
 import { Money, StatusBadge } from '@noah/ui';
 import { HabitatDrawer, HabitatToast, ModuleHero, SearchableSelect } from '../../../components/habitat-ui';
 import { useDashboard } from '../../../lib/dashboard-context';
+import {
+  currentMonthInZone,
+  formatDateInZone,
+  formatMonthKey,
+  todayInZone,
+  zonedTimeToUtcIso,
+} from '../../../lib/zoned-time';
 
 interface PaymentProofRow {
   id: string;
@@ -24,89 +31,132 @@ interface UnitOption {
 }
 
 export default function BillingPage() {
-  const { me, tenantId, apiFetch } = useDashboard();
+  const { me, tenantId, tenantTimezone, apiFetch } = useDashboard();
   const [proofs, setProofs] = useState<PaymentProofRow[]>([]);
   const [units, setUnits] = useState<UnitOption[]>([]);
   const [selected, setSelected] = useState<PaymentProofRow | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [feesDialogOpen, setFeesDialogOpen] = useState(false);
+  const [feesMonth, setFeesMonth] = useState('');
 
   const [unitId, setUnitId] = useState('');
   const [bank, setBank] = useState('');
-  const [amountUsd, setAmountUsd] = useState('50.00');
+  const [amountUsd, setAmountUsd] = useState('');
   const [reference, setReference] = useState('');
-  const [transferDate, setTransferDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [transferDate, setTransferDate] = useState(() => todayInZone(tenantTimezone));
 
   const isAccountant = me.role === 'SUPERADMIN' || me.role === 'ACCOUNTANT';
 
   const loadData = useCallback(async () => {
     if (!tenantId) return;
-    const u = await apiFetch<UnitOption[]>('/cadastre/units');
-    setUnits(u);
-    if (!unitId && u[0]) setUnitId(u[0].id);
-    if (isAccountant) {
-      const p = await apiFetch<PaymentProofRow[]>('/billing/payment-proofs');
-      setProofs(p);
-      setSelected((prev) => (prev ? p.find((x) => x.id === prev.id) ?? null : p[0] ?? null));
+    try {
+      const u = await apiFetch<UnitOption[]>('/cadastre/units');
+      setUnits(u);
+      setUnitId((prev) => prev || u[0]?.id || '');
+      if (isAccountant) {
+        const p = await apiFetch<PaymentProofRow[]>('/billing/payment-proofs');
+        setProofs(p);
+        setSelected((prev) => (prev ? p.find((x) => x.id === prev.id) ?? null : p[0] ?? null));
+      }
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'No se pudo cargar la información de finanzas.');
     }
-  }, [apiFetch, tenantId, isAccountant, unitId]);
+  }, [apiFetch, tenantId, isAccountant]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
+  async function runAction(key: string, action: () => Promise<void>) {
+    setBusy(key);
+    setError(null);
+    try {
+      await action();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo completar la operación.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function handleSubmitProof(e: FormEvent) {
     e.preventDefault();
-    const res = await apiFetch<{ possibleDuplicate: boolean }>('/billing/payment-proofs', {
-      method: 'POST',
-      body: {
-        unitId,
-        fileKey: `manual/${reference}.pdf`,
-        bank,
-        amountCents: Math.round(Number(amountUsd) * 100),
-        transferDate: new Date(`${transferDate}T12:00:00-05:00`).toISOString(),
-        reference,
-      },
+    await runAction('proof', async () => {
+      const res = await apiFetch<{ possibleDuplicate: boolean }>('/billing/payment-proofs', {
+        method: 'POST',
+        body: {
+          unitId,
+          fileKey: `manual/${reference}.pdf`,
+          bank,
+          amountCents: Math.round(Number(amountUsd) * 100),
+          transferDate: zonedTimeToUtcIso(transferDate, '12:00', tenantTimezone),
+          reference,
+        },
+      });
+      setReference('');
+      setAmountUsd('');
+      setDrawerOpen(false);
+      setToast(
+        res.possibleDuplicate
+          ? 'Comprobante cargado (ADVERTENCIA: posible duplicado detectado).'
+          : 'Comprobante enviado a la bandeja contable.',
+      );
+      await loadData();
     });
-    setReference('');
-    setDrawerOpen(false);
-    setToast(
-      res.possibleDuplicate
-        ? 'Comprobante cargado (ADVERTENCIA: posible duplicado detectado).'
-        : 'Comprobante enviado a la bandeja contable.',
-    );
-    await loadData();
   }
 
   async function handleApprove(proofId: string) {
     if (!window.confirm('¿Aprobar comprobante, registrar pago y emitir comprobante de recaudación?')) return;
-    const res = await apiFetch<{ receipt: { receiptCode: string } }>(
-      `/billing/payment-proofs/${proofId}/approve`,
-      { method: 'POST' },
-    );
-    setToast(`Pago aprobado. Comprobante emitido: ${res.receipt.receiptCode}`);
-    await loadData();
+    await runAction('review', async () => {
+      const res = await apiFetch<{ receipt: { receiptCode: string } }>(
+        `/billing/payment-proofs/${proofId}/approve`,
+        { method: 'POST' },
+      );
+      setToast(`Pago aprobado. Comprobante emitido: ${res.receipt.receiptCode}`);
+      await loadData();
+    });
   }
 
   async function handleReject(proofId: string) {
     const reason = window.prompt('Motivo obligatorio del rechazo:');
     if (!reason || !reason.trim()) return;
-    await apiFetch(`/billing/payment-proofs/${proofId}/reject`, {
-      method: 'POST',
-      body: { reason },
+    await runAction('review', async () => {
+      await apiFetch(`/billing/payment-proofs/${proofId}/reject`, {
+        method: 'POST',
+        body: { reason },
+      });
+      setToast('Comprobante rechazado.');
+      await loadData();
     });
-    setToast('Comprobante rechazado.');
-    await loadData();
   }
 
-  async function handleGenerateFees() {
-    const month = new Date().toISOString().slice(0, 7);
-    if (!window.confirm(`¿Generar alícuotas mensuales para ${month} en todas las unidades activas?`)) return;
-    const res = await apiFetch<{ created: number }>('/billing/monthly-fees/generate', {
-      method: 'POST',
-      body: { billingMonth: month, dueDate: new Date(`${month}-10T23:59:59-05:00`).toISOString() },
+  // Month options are only labels for the selector; the API resolves the building's current month
+  // and the due date (TenantSettings.monthlyFeeDueDay) when billingMonth is omitted.
+  const buildingMonth = currentMonthInZone(tenantTimezone);
+  const monthOptions = [-2, -1, 1].map((delta) => {
+    const [y, m] = buildingMonth.split('-').map(Number);
+    const idx = (y ?? 0) * 12 + ((m ?? 1) - 1) + delta;
+    return `${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, '0')}`;
+  });
+
+  async function handleGenerateFees(e: FormEvent) {
+    e.preventDefault();
+    await runAction('fees', async () => {
+      const res = await apiFetch<{ billingMonth: string; dueDate: string; created: number }>(
+        '/billing/monthly-fees/generate',
+        { method: 'POST', body: feesMonth ? { billingMonth: feesMonth } : {} },
+      );
+      setFeesDialogOpen(false);
+      setFeesMonth('');
+      setToast(
+        `Alícuotas ${formatMonthKey(res.billingMonth, 'long')}: ${res.created} cargos generados (vencen el ${formatDateInZone(res.dueDate, tenantTimezone)}).`,
+      );
     });
-    setToast(`Alícuotas ${month}: ${res.created} cargos generados.`);
   }
 
   const unitLabel = (id: string) => {
@@ -128,7 +178,7 @@ export default function BillingPage() {
         icon={Receipt}
         actions={
           <>
-            <button type="button" className="h-btn-outline" onClick={() => void handleGenerateFees()}>
+            <button type="button" className="h-btn-outline" onClick={() => setFeesDialogOpen(true)}>
               <FileSpreadsheet size={14} /> Generar alícuotas del mes
             </button>
             <button type="button" className="h-btn-dark" onClick={() => setDrawerOpen(true)}>
@@ -139,6 +189,15 @@ export default function BillingPage() {
       />
 
       {toast && <HabitatToast type="ok" text={toast} onClose={() => setToast(null)} />}
+      {error && <HabitatToast type="err" text={error} onClose={() => setError(null)} />}
+      {loadError && (
+        <div className="h-notice h-notice-err" role="alert">
+          <span>{loadError}</span>
+          <button type="button" className="h-btn-outline" onClick={() => void loadData()}>
+            Reintentar
+          </button>
+        </div>
+      )}
 
       {isAccountant && (
         <div className="h-kpi-strip">
@@ -241,7 +300,7 @@ export default function BillingPage() {
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <dt style={{ color: 'var(--muted-foreground)' }}>Fecha transferencia</dt>
-                    <dd style={{ margin: 0 }}>{new Date(selected.transferDate).toLocaleDateString('es-EC')}</dd>
+                    <dd style={{ margin: 0 }}>{formatDateInZone(selected.transferDate, tenantTimezone)}</dd>
                   </div>
                   {selected.rejectionReason && (
                     <div style={{ padding: '10px 12px', borderRadius: '10px', background: '#fae9e6', color: '#b7544d', fontSize: '12.5px' }}>
@@ -252,10 +311,10 @@ export default function BillingPage() {
 
                 {selected.status === 'PENDING' && (
                   <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                    <button type="button" className="h-btn-success" style={{ flex: 1 }} onClick={() => void handleApprove(selected.id)}>
+                    <button type="button" className="h-btn-success" style={{ flex: 1 }} disabled={busy !== null} onClick={() => void handleApprove(selected.id)}>
                       <Check size={15} /> Aprobar pago
                     </button>
-                    <button type="button" className="h-btn-danger" style={{ flex: 1 }} onClick={() => void handleReject(selected.id)}>
+                    <button type="button" className="h-btn-danger" style={{ flex: 1 }} disabled={busy !== null} onClick={() => void handleReject(selected.id)}>
                       <X size={15} /> Rechazar
                     </button>
                   </div>
@@ -297,7 +356,7 @@ export default function BillingPage() {
           </label>
           <label className="h-field">
             Monto (USD)
-            <input type="number" step="0.01" required value={amountUsd} onChange={(e) => setAmountUsd(e.target.value)} className="h-input" />
+            <input type="number" step="0.01" min="0.01" required value={amountUsd} onChange={(e) => setAmountUsd(e.target.value)} className="h-input" />
           </label>
           <label className="h-field">
             Número de referencia
@@ -311,8 +370,41 @@ export default function BillingPage() {
             <button type="button" className="h-btn-outline" onClick={() => setDrawerOpen(false)}>
               Cancelar
             </button>
-            <button type="submit" className="h-btn-dark">
-              Enviar a bandeja
+            <button type="submit" className="h-btn-dark" disabled={busy === 'proof'}>
+              {busy === 'proof' ? 'Enviando…' : 'Enviar a bandeja'}
+            </button>
+          </div>
+        </form>
+      </HabitatDrawer>
+
+      <HabitatDrawer
+        open={feesDialogOpen}
+        title="Generar alícuotas"
+        subtitle="Crea el cargo mensual de todas las unidades activas. Las unidades que ya tienen la alícuota del mes no se duplican."
+        onClose={() => setFeesDialogOpen(false)}
+        width={430}
+      >
+        <form onSubmit={handleGenerateFees} style={{ display: 'grid', gap: '14px' }}>
+          <label className="h-field">
+            Mes a facturar
+            <select className="h-input" value={feesMonth} onChange={(e) => setFeesMonth(e.target.value)}>
+              <option value="">Mes actual del edificio ({formatMonthKey(buildingMonth, 'long')})</option>
+              {monthOptions.map((m) => (
+                <option key={m} value={m}>
+                  {formatMonthKey(m, 'long')}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--muted-foreground)' }}>
+            La fecha de vencimiento se calcula con el día configurado en Configuración → Finanzas, en la zona horaria del edificio.
+          </p>
+          <div className="h-drawer-footer">
+            <button type="button" className="h-btn-outline" onClick={() => setFeesDialogOpen(false)}>
+              Cancelar
+            </button>
+            <button type="submit" className="h-btn-dark" disabled={busy === 'fees'}>
+              {busy === 'fees' ? 'Generando…' : 'Generar alícuotas'}
             </button>
           </div>
         </form>

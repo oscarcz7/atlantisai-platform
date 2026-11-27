@@ -51,37 +51,42 @@ export default function BuildingConfigPage() {
   const [parking, setParking] = useState<ParkingConfigDto | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [feePerSqm, setFeePerSqm] = useState('3.00');
-  const [depositDollars, setDepositDollars] = useState('200.00');
-  const [arrearsTolerance, setArrearsTolerance] = useState('2');
-  const [extraDeclared, setExtraDeclared] = useState('5.00');
-  const [extraUndeclared, setExtraUndeclared] = useState('10.00');
-  const [proofDeadline, setProofDeadline] = useState('240');
-  const [entryMargin, setEntryMargin] = useState('10');
-  const [generalAdvance, setGeneralAdvance] = useState('24');
-  const [shortNotice, setShortNotice] = useState('60');
+  // No business defaults: every field stays empty until the building's configuration is loaded.
+  const [feePerSqm, setFeePerSqm] = useState('');
+  const [depositDollars, setDepositDollars] = useState('');
+  const [arrearsTolerance, setArrearsTolerance] = useState('');
+  const [extraDeclared, setExtraDeclared] = useState('');
+  const [extraUndeclared, setExtraUndeclared] = useState('');
+  const [proofDeadline, setProofDeadline] = useState('');
+  const [entryMargin, setEntryMargin] = useState('');
+  const [generalAdvance, setGeneralAdvance] = useState('');
+  const [shortNotice, setShortNotice] = useState('');
   const [weekStart, setWeekStart] = useState('MONDAY');
-  const [cancelMinHours, setCancelMinHours] = useState('24');
+  const [feeDueDay, setFeeDueDay] = useState('');
+  const [cancelMinHours, setCancelMinHours] = useState('');
   const [cancelCleaning, setCancelCleaning] = useState<'NON_REFUNDABLE' | 'REFUNDABLE' | 'CREDIT'>('NON_REFUNDABLE');
 
-  const [parkingSpots, setParkingSpots] = useState('4');
-  const [parkingFreeMins, setParkingFreeMins] = useState('180');
-  const [parkingOvertimeDollars, setParkingOvertimeDollars] = useState('2.00');
+  const [parkingSpots, setParkingSpots] = useState('');
+  const [parkingFreeMins, setParkingFreeMins] = useState('');
+  const [parkingOvertimeDollars, setParkingOvertimeDollars] = useState('');
   const [parkingRounding, setParkingRounding] = useState('CEIL_HOUR');
+  const [parkingAlertMargin, setParkingAlertMargin] = useState('');
 
   const [amenityDrawer, setAmenityDrawer] = useState<'none' | 'create' | 'edit'>('none');
   const [amCode, setAmCode] = useState('');
   const [amName, setAmName] = useState('');
-  const [amCapacity, setAmCapacity] = useState('20');
-  const [amDuration, setAmDuration] = useState('120');
+  const [amCapacity, setAmCapacity] = useState('');
+  const [amDuration, setAmDuration] = useState('');
   const [amMode, setAmMode] = useState<AmenityDto['mode']>('SHARED');
   const [amAdvance, setAmAdvance] = useState<AmenityDto['advancePolicy']>('SHORT_NOTICE_ALLOWED');
   const [amHasSchedule, setAmHasSchedule] = useState(true);
   const [amOpen, setAmOpen] = useState('08:00');
   const [amClose, setAmClose] = useState('22:00');
   const [amFreqPeriod, setAmFreqPeriod] = useState<'NONE' | 'DAY' | 'WEEK' | 'MONTH'>('WEEK');
-  const [amFreqMax, setAmFreqMax] = useState('3');
+  const [amFreqMax, setAmFreqMax] = useState('');
   const [amGuestQuota, setAmGuestQuota] = useState(true);
   const [amRequiresDeposit, setAmRequiresDeposit] = useState(false);
   const [amCleaningDollars, setAmCleaningDollars] = useState('0.00');
@@ -90,50 +95,75 @@ export default function BuildingConfigPage() {
   const [utDrawer, setUtDrawer] = useState<'none' | 'create' | 'edit'>('none');
   const [utCode, setUtCode] = useState('');
   const [utName, setUtName] = useState('');
-  const [utBedrooms, setUtBedrooms] = useState('1');
-  const [utGuests, setUtGuests] = useState('2');
+  const [utBedrooms, setUtBedrooms] = useState('');
+  const [utGuests, setUtGuests] = useState('');
 
   const [comboDrawer, setComboDrawer] = useState(false);
   const [comboAmenityIds, setComboAmenityIds] = useState<string[]>([]);
-  const [comboFeeDollars, setComboFeeDollars] = useState('50.00');
+  const [comboFeeDollars, setComboFeeDollars] = useState('');
 
   const canEdit = me.role === 'SUPERADMIN' || me.role === 'ADMIN';
+  const ready = loadState === 'ready';
 
-  const loadAll = useCallback(async () => {
+  const applySettings = useCallback((s: TenantSettingsDto | null) => {
+    setSettings(s);
+    setFeePerSqm(s ? centsToDollars(s.monthlyFeePerSqmCents ?? 0) : '');
+    setDepositDollars(s ? centsToDollars(s.depositRequiredCents) : '');
+    setArrearsTolerance(s ? String(s.arrearsToleranceMonths) : '');
+    setExtraDeclared(s ? centsToDollars(s.extraGuestDeclaredCents) : '');
+    setExtraUndeclared(s ? centsToDollars(s.extraGuestUndeclaredCents) : '');
+    setProofDeadline(s ? String(s.paymentProofDeadlineMinutes) : '');
+    setEntryMargin(s ? String(s.entryMarginMinutes) : '');
+    setGeneralAdvance(s ? String(s.generalAdvanceHours) : '');
+    setShortNotice(s ? String(s.shortNoticeAdvanceMinutes) : '');
+    setWeekStart(s?.frequencyWeekStart || 'MONDAY');
+    setFeeDueDay(s?.monthlyFeeDueDay !== undefined ? String(s.monthlyFeeDueDay) : '');
+    setCancelMinHours(
+      s?.cancellationPolicy?.minHoursBefore !== undefined ? String(s.cancellationPolicy.minHoursBefore) : '',
+    );
+    setCancelCleaning(s?.cancellationPolicy?.cleaningFeeHandling ?? 'NON_REFUNDABLE');
+  }, []);
+
+  const applyParking = useCallback((pk: ParkingConfigDto | null) => {
+    setParking(pk);
+    setParkingSpots(pk ? String(pk.spots) : '');
+    setParkingFreeMins(pk ? String(pk.freeMinutes) : '');
+    setParkingOvertimeDollars(pk ? centsToDollars(pk.overtimeFeeCentsPerHour) : '');
+    setParkingRounding(pk?.rounding || 'CEIL_HOUR');
+    setParkingAlertMargin(pk?.alertMarginMinutes !== undefined ? String(pk.alertMarginMinutes) : '');
+  }, []);
+
+  /** Reloads only the catalog lists (keeps unsaved edits in the settings/parking forms). */
+  const reloadLists = useCallback(async () => {
     if (!tenantId) return;
-    const [s, ut, am, cb, pk] = await Promise.all([
-      catalogApi.getSettings(token, tenantId),
+    const [ut, am, cb] = await Promise.all([
       catalogApi.listUnitTypes(token, tenantId),
       catalogApi.listAmenities(token, tenantId),
       catalogApi.listCombos(token, tenantId),
-      catalogApi.getParking(token, tenantId),
     ]);
-    setSettings(s);
-    if (s) {
-      setFeePerSqm(centsToDollars(s.monthlyFeePerSqmCents ?? 0));
-      setDepositDollars(centsToDollars(s.depositRequiredCents));
-      setArrearsTolerance(String(s.arrearsToleranceMonths));
-      setExtraDeclared(centsToDollars(s.extraGuestDeclaredCents));
-      setExtraUndeclared(centsToDollars(s.extraGuestUndeclaredCents));
-      setProofDeadline(String(s.paymentProofDeadlineMinutes));
-      setEntryMargin(String(s.entryMarginMinutes));
-      setGeneralAdvance(String(s.generalAdvanceHours));
-      setShortNotice(String(s.shortNoticeAdvanceMinutes));
-      setWeekStart(s.frequencyWeekStart || 'MONDAY');
-      setCancelMinHours(String(s.cancellationPolicy?.minHoursBefore ?? 24));
-      setCancelCleaning(s.cancellationPolicy?.cleaningFeeHandling ?? 'NON_REFUNDABLE');
-    }
     setUnitTypes(ut);
     setAmenities(am);
     setCombos(cb);
-    setParking(pk);
-    if (pk) {
-      setParkingSpots(String(pk.spots));
-      setParkingFreeMins(String(pk.freeMinutes));
-      setParkingOvertimeDollars(centsToDollars(pk.overtimeFeeCentsPerHour));
-      setParkingRounding(pk.rounding || 'CEIL_HOUR');
-    }
   }, [token, tenantId]);
+
+  const loadAll = useCallback(async () => {
+    if (!tenantId) return;
+    setLoadState('loading');
+    setLoadError(null);
+    try {
+      const [s, pk] = await Promise.all([
+        catalogApi.getSettings(token, tenantId),
+        catalogApi.getParking(token, tenantId),
+        reloadLists(),
+      ]);
+      applySettings(s);
+      applyParking(pk);
+      setLoadState('ready');
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'No se pudo cargar la configuración del edificio.');
+      setLoadState('error');
+    }
+  }, [token, tenantId, reloadLists, applySettings, applyParking]);
 
   useEffect(() => {
     void loadAll();
@@ -141,11 +171,11 @@ export default function BuildingConfigPage() {
 
   async function handleSaveSettings(e: FormEvent) {
     e.preventDefault();
-    if (!tenantId || !canEdit) return;
+    if (!tenantId || !canEdit || !ready) return;
     setBusy(true);
     setFeedback(null);
     try {
-      await catalogApi.saveSettings(token, tenantId, {
+      const saved = await catalogApi.saveSettings(token, tenantId, {
         monthlyFeePerSqmCents: dollarsToCents(feePerSqm),
         depositRequiredCents: dollarsToCents(depositDollars),
         arrearsToleranceMonths: Number(arrearsTolerance),
@@ -156,13 +186,17 @@ export default function BuildingConfigPage() {
         generalAdvanceHours: Number(generalAdvance),
         shortNoticeAdvanceMinutes: Number(shortNotice),
         frequencyWeekStart: weekStart,
-        cancellationPolicy: {
-          minHoursBefore: Number(cancelMinHours),
-          cleaningFeeHandling: cancelCleaning,
-        },
+        monthlyFeeDueDay: Number(feeDueDay),
+        cancellationPolicy:
+          cancelMinHours === ''
+            ? null
+            : {
+                minHoursBefore: Number(cancelMinHours),
+                cleaningFeeHandling: cancelCleaning,
+              },
       });
+      applySettings(saved);
       setFeedback({ type: 'ok', text: 'Parámetros del edificio guardados y registrados en auditoría.' });
-      await loadAll();
     } catch (err) {
       setFeedback({ type: 'err', text: err instanceof Error ? err.message : 'Error al guardar parámetros.' });
     } finally {
@@ -172,18 +206,19 @@ export default function BuildingConfigPage() {
 
   async function handleSaveParking(e: FormEvent) {
     e.preventDefault();
-    if (!tenantId || !canEdit) return;
+    if (!tenantId || !canEdit || !ready) return;
     setBusy(true);
     setFeedback(null);
     try {
-      await catalogApi.saveParking(token, tenantId, {
+      const saved = await catalogApi.saveParking(token, tenantId, {
         spots: Number(parkingSpots),
         freeMinutes: Number(parkingFreeMins),
         overtimeFeeCentsPerHour: dollarsToCents(parkingOvertimeDollars),
         rounding: parkingRounding,
+        ...(parkingAlertMargin !== '' ? { alertMarginMinutes: Number(parkingAlertMargin) } : {}),
       });
+      applyParking(saved);
       setFeedback({ type: 'ok', text: 'Configuración de parqueaderos actualizada.' });
-      await loadAll();
     } catch (err) {
       setFeedback({ type: 'err', text: err instanceof Error ? err.message : 'Error al guardar parqueaderos.' });
     } finally {
@@ -194,15 +229,15 @@ export default function BuildingConfigPage() {
   function openCreateAmenity() {
     setAmCode('');
     setAmName('');
-    setAmCapacity('20');
-    setAmDuration('120');
+    setAmCapacity('');
+    setAmDuration('');
     setAmMode('SHARED');
     setAmAdvance('SHORT_NOTICE_ALLOWED');
     setAmHasSchedule(true);
-    setAmOpen('08:00');
-    setAmClose('22:00');
-    setAmFreqPeriod('WEEK');
-    setAmFreqMax('3');
+    setAmOpen('');
+    setAmClose('');
+    setAmFreqPeriod('NONE');
+    setAmFreqMax('');
     setAmGuestQuota(true);
     setAmRequiresDeposit(false);
     setAmCleaningDollars('0.00');
@@ -219,10 +254,10 @@ export default function BuildingConfigPage() {
     setAmAdvance(a.advancePolicy);
     const sched = a.schedule?.all;
     setAmHasSchedule(Boolean(sched));
-    setAmOpen(sched?.open ?? '08:00');
-    setAmClose(sched?.close ?? '22:00');
+    setAmOpen(sched?.open ?? '');
+    setAmClose(sched?.close ?? '');
     setAmFreqPeriod(a.frequency ? a.frequency.period : 'NONE');
-    setAmFreqMax(String(a.frequency?.max ?? 1));
+    setAmFreqMax(a.frequency ? String(a.frequency.max) : '');
     setAmGuestQuota(a.appliesGuestQuota);
     setAmRequiresDeposit(a.requiresDeposit);
     setAmCleaningDollars(centsToDollars(a.cleaningFeeCents));
@@ -252,7 +287,7 @@ export default function BuildingConfigPage() {
       });
       setAmenityDrawer('none');
       setFeedback({ type: 'ok', text: `Área comunal "${amName}" guardada.` });
-      await loadAll();
+      await reloadLists();
     } catch (err) {
       setFeedback({ type: 'err', text: err instanceof Error ? err.message : 'Error al guardar área.' });
     } finally {
@@ -267,7 +302,7 @@ export default function BuildingConfigPage() {
     try {
       await catalogApi.deleteAmenity(token, tenantId, a.id);
       setFeedback({ type: 'ok', text: `Área "${a.name}" eliminada.` });
-      await loadAll();
+      await reloadLists();
     } catch (err) {
       setFeedback({ type: 'err', text: err instanceof Error ? err.message : 'No se pudo eliminar el área.' });
     }
@@ -276,8 +311,8 @@ export default function BuildingConfigPage() {
   function openCreateUnitType() {
     setUtCode('');
     setUtName('');
-    setUtBedrooms('1');
-    setUtGuests('2');
+    setUtBedrooms('');
+    setUtGuests('');
     setUtDrawer('create');
   }
 
@@ -303,7 +338,7 @@ export default function BuildingConfigPage() {
       });
       setUtDrawer('none');
       setFeedback({ type: 'ok', text: `Tipología "${utName}" guardada.` });
-      await loadAll();
+      await reloadLists();
     } catch (err) {
       setFeedback({ type: 'err', text: err instanceof Error ? err.message : 'Error al guardar tipología.' });
     } finally {
@@ -318,7 +353,7 @@ export default function BuildingConfigPage() {
     try {
       await catalogApi.deleteUnitType(token, tenantId, ut.id);
       setFeedback({ type: 'ok', text: `Tipología "${ut.name}" eliminada.` });
-      await loadAll();
+      await reloadLists();
     } catch (err) {
       setFeedback({ type: 'err', text: err instanceof Error ? err.message : 'No se pudo eliminar la tipología.' });
     }
@@ -337,7 +372,7 @@ export default function BuildingConfigPage() {
       setComboDrawer(false);
       setComboAmenityIds([]);
       setFeedback({ type: 'ok', text: 'Combo de limpieza creado.' });
-      await loadAll();
+      await reloadLists();
     } catch (err) {
       setFeedback({ type: 'err', text: err instanceof Error ? err.message : 'Error al crear combo.' });
     } finally {
@@ -352,7 +387,7 @@ export default function BuildingConfigPage() {
     try {
       await catalogApi.deleteCombo(token, tenantId, id);
       setFeedback({ type: 'ok', text: 'Combo eliminado.' });
-      await loadAll();
+      await reloadLists();
     } catch (err) {
       setFeedback({ type: 'err', text: err instanceof Error ? err.message : 'Error al eliminar combo.' });
     }
@@ -363,14 +398,22 @@ export default function BuildingConfigPage() {
     occupancyRole: AccessRuleDto['occupancyRole'],
     currentAllowed: boolean,
   ) {
-    if (!tenantId || !canEdit) return;
-    await catalogApi.setAccessRule(token, tenantId, {
-      amenityId,
-      occupancyRole,
-      allowed: !currentAllowed,
-    });
-    setFeedback({ type: 'ok', text: 'Matriz de acceso actualizada y registrada en auditoría.' });
-    await loadAll();
+    if (!tenantId || !canEdit || busy) return;
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await catalogApi.setAccessRule(token, tenantId, {
+        amenityId,
+        occupancyRole,
+        allowed: !currentAllowed,
+      });
+      setFeedback({ type: 'ok', text: 'Matriz de acceso actualizada y registrada en auditoría.' });
+      await reloadLists();
+    } catch (err) {
+      setFeedback({ type: 'err', text: err instanceof Error ? err.message : 'No se pudo actualizar la matriz.' });
+    } finally {
+      setBusy(false);
+    }
   }
 
   const amenityNameById = new Map(amenities.map((a) => [a.id, a.name]));
@@ -418,47 +461,67 @@ export default function BuildingConfigPage() {
         <HabitatToast type={feedback.type} text={feedback.text} onClose={() => setFeedback(null)} />
       )}
 
-      {tab === 'settings' && settings && (
+      {loadState === 'loading' && (
+        <div className="h-panel" style={{ color: 'var(--muted-foreground)', fontSize: '13.5px' }}>
+          Cargando configuración del edificio…
+        </div>
+      )}
+
+      {loadState === 'error' && (
+        <div className="h-notice h-notice-err" role="alert">
+          <span>{loadError ?? 'No se pudo cargar la configuración del edificio.'}</span>
+          <button type="button" className="h-btn-outline" onClick={() => void loadAll()}>
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {ready && tab === 'settings' && (
         <form onSubmit={handleSaveSettings} className="h-panel" style={{ display: 'grid', gap: '18px' }}>
+          {!settings && (
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted-foreground)' }}>
+              Este edificio aún no tiene parámetros registrados. Completa todos los campos y guarda.
+            </p>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
             <label className="h-field">
               Costo de alícuota por m² (USD / m²)
-              <input type="number" step="0.01" min="0" disabled={!canEdit} value={feePerSqm} onChange={(e) => setFeePerSqm(e.target.value)} className="h-input" />
+              <input type="number" step="0.01" min="0" required disabled={!canEdit} value={feePerSqm} onChange={(e) => setFeePerSqm(e.target.value)} className="h-input" />
               <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', fontWeight: 400 }}>
                 Calcula automáticamente la alícuota mensual de cada unidad según su metraje.
               </span>
             </label>
             <label className="h-field">
               Garantía requerida (USD)
-              <input type="number" step="0.01" min="0" disabled={!canEdit} value={depositDollars} onChange={(e) => setDepositDollars(e.target.value)} className="h-input" />
+              <input type="number" step="0.01" min="0" required disabled={!canEdit} value={depositDollars} onChange={(e) => setDepositDollars(e.target.value)} className="h-input" />
             </label>
             <label className="h-field">
               Tolerancia de mora (meses impagos)
-              <input type="number" min="0" disabled={!canEdit} value={arrearsTolerance} onChange={(e) => setArrearsTolerance(e.target.value)} className="h-input" />
+              <input type="number" min="0" required disabled={!canEdit} value={arrearsTolerance} onChange={(e) => setArrearsTolerance(e.target.value)} className="h-input" />
             </label>
             <label className="h-field">
               Invitado extra declarado (USD)
-              <input type="number" step="0.01" min="0" disabled={!canEdit} value={extraDeclared} onChange={(e) => setExtraDeclared(e.target.value)} className="h-input" />
+              <input type="number" step="0.01" min="0" required disabled={!canEdit} value={extraDeclared} onChange={(e) => setExtraDeclared(e.target.value)} className="h-input" />
             </label>
             <label className="h-field">
               Invitado extra no declarado / multa (USD)
-              <input type="number" step="0.01" min="0" disabled={!canEdit} value={extraUndeclared} onChange={(e) => setExtraUndeclared(e.target.value)} className="h-input" />
+              <input type="number" step="0.01" min="0" required disabled={!canEdit} value={extraUndeclared} onChange={(e) => setExtraUndeclared(e.target.value)} className="h-input" />
             </label>
             <label className="h-field">
               Plazo envío comprobante limpieza (min)
-              <input type="number" min="1" disabled={!canEdit} value={proofDeadline} onChange={(e) => setProofDeadline(e.target.value)} className="h-input" />
+              <input type="number" min="1" required disabled={!canEdit} value={proofDeadline} onChange={(e) => setProofDeadline(e.target.value)} className="h-input" />
             </label>
             <label className="h-field">
               Margen de entrada QR antes del inicio (min)
-              <input type="number" min="0" disabled={!canEdit} value={entryMargin} onChange={(e) => setEntryMargin(e.target.value)} className="h-input" />
+              <input type="number" min="0" required disabled={!canEdit} value={entryMargin} onChange={(e) => setEntryMargin(e.target.value)} className="h-input" />
             </label>
             <label className="h-field">
               Anticipación general de reserva (horas)
-              <input type="number" min="0" disabled={!canEdit} value={generalAdvance} onChange={(e) => setGeneralAdvance(e.target.value)} className="h-input" />
+              <input type="number" min="0" required disabled={!canEdit} value={generalAdvance} onChange={(e) => setGeneralAdvance(e.target.value)} className="h-input" />
             </label>
             <label className="h-field">
               Anticipación aviso corto áreas compartidas (min)
-              <input type="number" min="0" disabled={!canEdit} value={shortNotice} onChange={(e) => setShortNotice(e.target.value)} className="h-input" />
+              <input type="number" min="0" required disabled={!canEdit} value={shortNotice} onChange={(e) => setShortNotice(e.target.value)} className="h-input" />
             </label>
             <label className="h-field">
               Inicio de semana para frecuencias
@@ -472,6 +535,13 @@ export default function BuildingConfigPage() {
                   { value: 'SUNDAY', label: 'Domingo' },
                 ]}
               />
+            </label>
+            <label className="h-field">
+              Día de vencimiento de la alícuota (1–31)
+              <input type="number" min="1" max="31" required disabled={!canEdit} value={feeDueDay} onChange={(e) => setFeeDueDay(e.target.value)} className="h-input" />
+              <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', fontWeight: 400 }}>
+                Si el mes tiene menos días, vence el último día del mes (23:59 hora del edificio).
+              </span>
             </label>
             <label className="h-field">
               Cancelación sin penalidad (horas antes)
@@ -494,7 +564,7 @@ export default function BuildingConfigPage() {
           </div>
           {canEdit && (
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="submit" disabled={busy} className="h-btn-dark">
+              <button type="submit" disabled={busy || !ready} className="h-btn-dark">
                 {busy ? 'Guardando...' : 'Guardar parámetros'}
               </button>
             </div>
@@ -502,7 +572,7 @@ export default function BuildingConfigPage() {
         </form>
       )}
 
-      {tab === 'amenities' && (
+      {ready && tab === 'amenities' && (
         <div className="h-table-wrap">
           <table>
             <thead>
@@ -561,7 +631,7 @@ export default function BuildingConfigPage() {
         </div>
       )}
 
-      {tab === 'matrix' && (
+      {ready && tab === 'matrix' && (
         <div className="h-table-wrap">
           <table>
             <thead>
@@ -586,7 +656,7 @@ export default function BuildingConfigPage() {
                         <input
                           type="checkbox"
                           checked={allowed}
-                          disabled={!canEdit}
+                          disabled={!canEdit || busy}
                           onChange={() => void toggleAccess(a.id, r.key, allowed)}
                           aria-label={`${a.name} - ${r.label}`}
                           style={{ width: '16px', height: '16px', accentColor: '#28251f', cursor: canEdit ? 'pointer' : 'default' }}
@@ -601,7 +671,7 @@ export default function BuildingConfigPage() {
         </div>
       )}
 
-      {tab === 'unitTypes' && (
+      {ready && tab === 'unitTypes' && (
         <div className="h-table-wrap">
           <table>
             <thead>
@@ -637,7 +707,7 @@ export default function BuildingConfigPage() {
         </div>
       )}
 
-      {tab === 'combos' && (
+      {ready && tab === 'combos' && (
         <div style={{ display: 'grid', gap: '10px' }}>
           {combos.map((c) => (
             <div key={c.id} className="h-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px' }}>
@@ -657,20 +727,29 @@ export default function BuildingConfigPage() {
         </div>
       )}
 
-      {tab === 'parking' && parking && (
+      {ready && tab === 'parking' && (
         <form onSubmit={handleSaveParking} className="h-panel" style={{ display: 'grid', gap: '16px', maxWidth: '640px' }}>
+          {!parking && (
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted-foreground)' }}>
+              Este edificio aún no tiene parqueaderos de visitas configurados. Completa los campos y guarda.
+            </p>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
             <label className="h-field">
               Puestos de parqueo de visitas
-              <input type="number" min="0" disabled={!canEdit} value={parkingSpots} onChange={(e) => setParkingSpots(e.target.value)} className="h-input" />
+              <input type="number" min="0" required disabled={!canEdit} value={parkingSpots} onChange={(e) => setParkingSpots(e.target.value)} className="h-input" />
             </label>
             <label className="h-field">
               Tiempo gratuito (minutos)
-              <input type="number" min="0" disabled={!canEdit} value={parkingFreeMins} onChange={(e) => setParkingFreeMins(e.target.value)} className="h-input" />
+              <input type="number" min="0" required disabled={!canEdit} value={parkingFreeMins} onChange={(e) => setParkingFreeMins(e.target.value)} className="h-input" />
             </label>
             <label className="h-field">
               Tarifa por exceso (USD / hora)
-              <input type="number" step="0.01" min="0" disabled={!canEdit} value={parkingOvertimeDollars} onChange={(e) => setParkingOvertimeDollars(e.target.value)} className="h-input" />
+              <input type="number" step="0.01" min="0" required disabled={!canEdit} value={parkingOvertimeDollars} onChange={(e) => setParkingOvertimeDollars(e.target.value)} className="h-input" />
+            </label>
+            <label className="h-field">
+              Alerta en garita antes de terminar el tiempo gratuito (min)
+              <input type="number" min="0" required disabled={!canEdit} value={parkingAlertMargin} onChange={(e) => setParkingAlertMargin(e.target.value)} className="h-input" />
             </label>
             <label className="h-field">
               Redondeo de exceso
@@ -688,7 +767,7 @@ export default function BuildingConfigPage() {
           </div>
           {canEdit && (
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="submit" disabled={busy} className="h-btn-dark">
+              <button type="submit" disabled={busy || !ready} className="h-btn-dark">
                 {busy ? 'Guardando...' : 'Guardar parqueaderos'}
               </button>
             </div>
@@ -757,11 +836,11 @@ export default function BuildingConfigPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <label className="h-field">
                   Apertura
-                  <input type="time" value={amOpen} onChange={(e) => setAmOpen(e.target.value)} className="h-input" />
+                  <input type="time" required value={amOpen} onChange={(e) => setAmOpen(e.target.value)} className="h-input" />
                 </label>
                 <label className="h-field">
                   Cierre
-                  <input type="time" value={amClose} onChange={(e) => setAmClose(e.target.value)} className="h-input" />
+                  <input type="time" required value={amClose} onChange={(e) => setAmClose(e.target.value)} className="h-input" />
                 </label>
               </div>
             )}
@@ -783,7 +862,7 @@ export default function BuildingConfigPage() {
               {amFreqPeriod !== 'NONE' && (
                 <label className="h-field">
                   Máx. reservas
-                  <input type="number" min="1" value={amFreqMax} onChange={(e) => setAmFreqMax(e.target.value)} className="h-input" />
+                  <input type="number" min="1" required value={amFreqMax} onChange={(e) => setAmFreqMax(e.target.value)} className="h-input" />
                 </label>
               )}
             </div>

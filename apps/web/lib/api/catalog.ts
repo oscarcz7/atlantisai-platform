@@ -17,6 +17,8 @@ export interface TenantSettingsDto {
   generalAdvanceHours: number;
   shortNoticeAdvanceMinutes: number;
   frequencyWeekStart: string;
+  /** Day of month (1-31, clamped to the month's last day) on which generated monthly fees are due. */
+  monthlyFeeDueDay: number;
   cancellationPolicy?: CancellationPolicyDto | null;
 }
 
@@ -90,6 +92,8 @@ export interface ParkingConfigDto {
   freeMinutes: number;
   overtimeFeeCentsPerHour: number;
   rounding: string;
+  /** Minutes before the free window ends at which the guard console raises an alert. */
+  alertMarginMinutes: number;
 }
 
 async function catalogFetch<T>(
@@ -147,6 +151,12 @@ export const catalogApi = {
   saveParking: (
     token: string,
     tenantId: string,
-    body: { spots: number; freeMinutes: number; overtimeFeeCentsPerHour: number; rounding?: string },
+    body: {
+      spots: number;
+      freeMinutes: number;
+      overtimeFeeCentsPerHour: number;
+      rounding?: string;
+      alertMarginMinutes?: number;
+    },
   ) => catalogFetch<ParkingConfigDto>('/catalog/parking', token, tenantId, { method: 'PUT', body }),
 };

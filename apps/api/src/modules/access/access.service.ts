@@ -12,6 +12,8 @@ import {
 import { generateGatewayToken, hashGatewayToken, matchesLegacyGatewayToken } from './gateway-auth.js';
 import { assertAmenitiesInTenant } from '../../common/prisma/tenant-refs.js';
 
+export const OPEN_DOOR_REASON_MAX_LENGTH = 500;
+
 export interface UpsertReaderInput {
   id?: string;
   code: string;
@@ -794,6 +796,21 @@ export class AccessService {
   }
 
   async triggerOpenDoor(ctx: TenantContext, readerId: string, reason: string, now: Date = new Date()) {
+    const trimmedReason = typeof reason === 'string' ? reason.trim() : '';
+    if (!trimmedReason) {
+      throw new DomainError(
+        'OPEN_DOOR_REASON_REQUIRED',
+        'Debes indicar el motivo de la apertura remota.',
+        422,
+      );
+    }
+    if (trimmedReason.length > OPEN_DOOR_REASON_MAX_LENGTH) {
+      throw new DomainError(
+        'OPEN_DOOR_REASON_TOO_LONG',
+        `El motivo no puede superar ${OPEN_DOOR_REASON_MAX_LENGTH} caracteres.`,
+        422,
+      );
+    }
     return this.prisma.withTenant(ctx, async (tx) => {
       const reader = await tx.reader.findFirst({ where: { id: readerId, tenantId: ctx.tenantId } });
       if (!reader) {
@@ -806,7 +823,7 @@ export class AccessService {
           readerId: reader.id,
           idempotencyKey: `open:${reader.id}:${now.getTime()}`,
           type: 'OPEN_DOOR',
-          payload: { doorNo: reader.doorNo, reason: reason || 'Apertura remota desde dashboard' },
+          payload: { doorNo: reader.doorNo, reason: trimmedReason },
           status: 'PENDING',
         },
       });
@@ -820,7 +837,7 @@ export class AccessService {
           entity: 'Reader',
           entityId: reader.id,
           channel: ctx.channel,
-          after: { commandId: cmd.id, reason },
+          after: { commandId: cmd.id, reason: trimmedReason },
         },
       });
       return cmd;

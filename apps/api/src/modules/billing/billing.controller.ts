@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { type TenantContext } from '@noah/domain';
 import { CurrentTenant, Roles } from '../auth/decorators/roles.decorator.js';
+import { parseLimit } from '../../common/dto/query.js';
 import { ParseIdPipe } from '../../common/pipes/parse-id.pipe.js';
 import { BillingService } from './billing.service.js';
 import {
@@ -47,7 +48,16 @@ export class BillingController {
     @CurrentTenant() ctx: TenantContext | undefined,
     @Body() body: GenerateMonthlyFeesDto,
   ) {
-    return this.billingService.generateMonthlyFees(requireTenant(ctx), body.billingMonth, body.dueDate);
+    return this.billingService.generateMonthlyFees(requireTenant(ctx), {
+      billingMonth: body?.billingMonth,
+      dueDate: body?.dueDate,
+    });
+  }
+
+  @Roles('SUPERADMIN', 'ADMIN', 'ACCOUNTANT')
+  @Get('monthly-balance')
+  getMonthlyBalance(@CurrentTenant() ctx: TenantContext | undefined, @Query('months') months?: string) {
+    return this.billingService.getMonthlyBalance(requireTenant(ctx), parseLimit(months, 6, 24));
   }
 
   @Roles('SUPERADMIN', 'ADMIN')

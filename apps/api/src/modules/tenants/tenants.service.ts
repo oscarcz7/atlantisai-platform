@@ -35,6 +35,7 @@ export interface BuildingConfigImportJson {
     generalAdvanceHours: number;
     shortNoticeAdvanceMinutes: number;
     frequencyWeekStart?: string;
+    monthlyFeeDueDay?: number;
     cancellationPolicy?: Record<string, unknown>;
   };
   unitTypes: Array<{ code: string; name: string; bedrooms?: number; includedGuests: number }>;
@@ -59,6 +60,7 @@ export interface BuildingConfigImportJson {
     freeMinutes: number;
     overtimeFeeCentsPerHour: number;
     rounding?: string;
+    alertMarginMinutes?: number;
   };
 }
 
@@ -333,6 +335,9 @@ export class TenantsService {
         generalAdvanceHours: config.settings.generalAdvanceHours,
         shortNoticeAdvanceMinutes: config.settings.shortNoticeAdvanceMinutes,
         frequencyWeekStart: config.settings.frequencyWeekStart ?? 'MONDAY',
+        ...(config.settings.monthlyFeeDueDay !== undefined
+          ? { monthlyFeeDueDay: config.settings.monthlyFeeDueDay }
+          : {}),
         cancellationPolicy: (config.settings.cancellationPolicy ?? null) as Prisma.InputJsonValue,
       };
       if (existingSettings) {
@@ -455,6 +460,9 @@ export class TenantsService {
           freeMinutes: config.parking.freeMinutes,
           overtimeFeeCentsPerHour: config.parking.overtimeFeeCentsPerHour,
           rounding: config.parking.rounding ?? 'CEIL_HOUR',
+          ...(config.parking.alertMarginMinutes !== undefined
+            ? { alertMarginMinutes: config.parking.alertMarginMinutes }
+            : {}),
         },
         create: {
           id: generateUuidV7(),
@@ -463,6 +471,9 @@ export class TenantsService {
           freeMinutes: config.parking.freeMinutes,
           overtimeFeeCentsPerHour: config.parking.overtimeFeeCentsPerHour,
           rounding: config.parking.rounding ?? 'CEIL_HOUR',
+          ...(config.parking.alertMarginMinutes !== undefined
+            ? { alertMarginMinutes: config.parking.alertMarginMinutes }
+            : {}),
         },
       });
 
@@ -553,6 +564,7 @@ export class TenantsService {
             generalAdvanceHours: settings.generalAdvanceHours,
             shortNoticeAdvanceMinutes: settings.shortNoticeAdvanceMinutes,
             frequencyWeekStart: settings.frequencyWeekStart,
+            monthlyFeeDueDay: settings.monthlyFeeDueDay,
             cancellationPolicy: settings.cancellationPolicy ?? Prisma.JsonNull,
           },
         });
@@ -630,6 +642,7 @@ export class TenantsService {
             freeMinutes: parking.freeMinutes,
             overtimeFeeCentsPerHour: parking.overtimeFeeCentsPerHour,
             rounding: parking.rounding,
+            alertMarginMinutes: parking.alertMarginMinutes,
           },
         });
       }

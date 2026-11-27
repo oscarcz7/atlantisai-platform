@@ -7,6 +7,7 @@ import { DomainTag, HabitatDrawer, HabitatTabs, HabitatToast, ModuleHero, Search
 import { useDashboard } from '../../../lib/dashboard-context';
 import { downloadCsv } from '../../../lib/export-csv';
 import { getOccupancyRoleMeta } from '../../../lib/labels';
+import { todayInZone, zonedTimeToUtcIso } from '../../../lib/zoned-time';
 
 interface UnitTypeRow {
   id: string;
@@ -23,6 +24,10 @@ interface UnitRow {
   areaSqm: number | null;
   bedrooms: number;
   monthlyFeeCents: number;
+  /** Set by the API: true when the fee was entered manually. */
+  monthlyFeeIsManual: boolean;
+  /** Computed by the API: area × building rate (0 without area or rate). */
+  autoMonthlyFeeCents: number;
   isActive: boolean;
   unitType: { name: string };
   occupancies: Array<{ id: string; role: string; person: { fullName: string } }>;
@@ -42,7 +47,7 @@ interface SettingsSnippet {
 }
 
 export default function CadastrePage() {
-  const { me, tenantId, apiFetch } = useDashboard();
+  const { me, tenantId, tenantTimezone, apiFetch } = useDashboard();
   const [tab, setTab] = useState<'units' | 'persons'>('units');
   const [units, setUnits] = useState<UnitRow[]>([]);
   const [persons, setPersons] = useState<PersonRow[]>([]);
@@ -52,6 +57,8 @@ export default function CadastrePage() {
   const [editingUnit, setEditingUnit] = useState<UnitRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const [uNumber, setUNumber] = useState('');
   const [uFloor, setUFloor] = useState('1');
@@ -59,7 +66,7 @@ export default function CadastrePage() {
   const [uBedrooms, setUBedrooms] = useState('1');
   const [uAreaSqm, setUAreaSqm] = useState('');
   const [uManualFee, setUManualFee] = useState(false);
-  const [uFeeUsd, setUFeeUsd] = useState('0.00');
+  const [uFeeUsd, setUFeeUsd] = useState('');
 
   const [pName, setPName] = useState('');
   const [pNationalId, setPNationalId] = useState('');
@@ -69,40 +76,44 @@ export default function CadastrePage() {
   const [oUnitId, setOUnitId] = useState('');
   const [oPersonId, setOPersonId] = useState('');
   const [oRole, setORole] = useState('OWNER_RESIDENT');
-  const [oValidFrom, setOValidFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [oValidFrom, setOValidFrom] = useState(() => todayInZone(tenantTimezone));
   const [oValidTo, setOValidTo] = useState('');
 
   const canEdit = me.role === 'SUPERADMIN' || me.role === 'ADMIN';
 
   const loadData = useCallback(async () => {
     if (!tenantId) return;
-    const [u, p, ut, settings] = await Promise.all([
-      apiFetch<UnitRow[]>('/cadastre/units'),
-      apiFetch<PersonRow[]>('/cadastre/persons'),
-      apiFetch<UnitTypeRow[]>('/catalog/unit-types'),
-      apiFetch<SettingsSnippet | null>('/catalog/settings'),
-    ]);
-    setUnits(u);
-    setPersons(p);
-    setUnitTypes(ut);
-    setFeePerSqmCents(settings?.monthlyFeePerSqmCents ?? 0);
-    if (!uTypeId && ut[0]) {
-      setUTypeId(ut[0].id);
-      setUBedrooms(String(ut[0].bedrooms ?? 1));
+    try {
+      const [u, p, ut, settings] = await Promise.all([
+        apiFetch<UnitRow[]>('/cadastre/units'),
+        apiFetch<PersonRow[]>('/cadastre/persons'),
+        apiFetch<UnitTypeRow[]>('/catalog/unit-types'),
+        apiFetch<SettingsSnippet | null>('/catalog/settings'),
+      ]);
+      setUnits(u);
+      setPersons(p);
+      setUnitTypes(ut);
+      setFeePerSqmCents(settings?.monthlyFeePerSqmCents ?? 0);
+      if (!uTypeId && ut[0]) {
+        setUTypeId(ut[0].id);
+        setUBedrooms(String(ut[0].bedrooms ?? 1));
+      }
+      if (!oUnitId && u[0]) setOUnitId(u[0].id);
+      if (!oPersonId && p[0]) setOPersonId(p[0].id);
+      setPageError(null);
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : 'No se pudo cargar el catastro.');
     }
-    if (!oUnitId && u[0]) setOUnitId(u[0].id);
-    if (!oPersonId && p[0]) setOPersonId(p[0].id);
   }, [apiFetch, tenantId, uTypeId, oUnitId, oPersonId]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
-  const parsedArea = uAreaSqm.trim() !== '' ? Number(uAreaSqm) : null;
-  const computedFeeCents =
-    parsedArea !== null && Number.isFinite(parsedArea) && parsedArea > 0 && feePerSqmCents > 0
-      ? Math.round(parsedArea * feePerSqmCents)
-      : 0;
+  // The automatic fee is computed by the API; the form only shows the stored value for unchanged areas.
+  const areaUnchanged =
+    editingUnit !== null &&
+    (uAreaSqm.trim() === '' ? editingUnit.areaSqm === null : Number(uAreaSqm) === editingUnit.areaSqm);
 
   function openCreateUnit() {
     setError(null);
@@ -114,7 +125,7 @@ export default function CadastrePage() {
     setUBedrooms(String(firstType?.bedrooms ?? 1));
     setUAreaSqm('');
     setUManualFee(feePerSqmCents === 0);
-    setUFeeUsd('0.00');
+    setUFeeUsd('');
     setDrawer('unit');
   }
 
@@ -126,9 +137,7 @@ export default function CadastrePage() {
     setUTypeId(u.unitTypeId);
     setUBedrooms(String(u.bedrooms ?? 1));
     setUAreaSqm(u.areaSqm !== null && u.areaSqm !== undefined ? String(u.areaSqm) : '');
-    const autoExpected = u.areaSqm && feePerSqmCents > 0 ? Math.round(u.areaSqm * feePerSqmCents) : null;
-    const isManual = autoExpected === null || autoExpected !== u.monthlyFeeCents;
-    setUManualFee(isManual);
+    setUManualFee(u.monthlyFeeIsManual);
     setUFeeUsd((u.monthlyFeeCents / 100).toFixed(2));
     setDrawer('unit');
   }
@@ -149,8 +158,11 @@ export default function CadastrePage() {
       unitTypeId: uTypeId,
       bedrooms: Number(uBedrooms),
       areaSqm,
-      ...(uManualFee ? { monthlyFeeCents: Math.round(Number(uFeeUsd) * 100) } : {}),
+      ...(uManualFee
+        ? { monthlyFeeMode: 'MANUAL' as const, monthlyFeeCents: Math.round(Number(uFeeUsd) * 100) }
+        : { monthlyFeeMode: 'AUTO' as const }),
     };
+    setSaving(true);
     try {
       if (editingUnit) {
         await apiFetch(`/cadastre/units/${editingUnit.id}`, { method: 'PATCH', body: payload });
@@ -164,12 +176,15 @@ export default function CadastrePage() {
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar unidad.');
+    } finally {
+      setSaving(false);
     }
   }
 
   async function handleCreatePerson(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSaving(true);
     try {
       await apiFetch('/cadastre/persons', {
         method: 'POST',
@@ -189,12 +204,15 @@ export default function CadastrePage() {
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al registrar persona.');
+    } finally {
+      setSaving(false);
     }
   }
 
   async function handleCreateOccupancy(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSaving(true);
     try {
       await apiFetch('/cadastre/occupancies', {
         method: 'POST',
@@ -202,8 +220,8 @@ export default function CadastrePage() {
           unitId: oUnitId,
           personId: oPersonId,
           role: oRole,
-          validFrom: new Date(`${oValidFrom}T00:00:00-05:00`).toISOString(),
-          ...(oValidTo ? { validTo: new Date(`${oValidTo}T23:59:59-05:00`).toISOString() } : {}),
+          validFrom: zonedTimeToUtcIso(oValidFrom, '00:00:00', tenantTimezone),
+          ...(oValidTo ? { validTo: zonedTimeToUtcIso(oValidTo, '23:59:59', tenantTimezone) } : {}),
         },
       });
       setDrawer(null);
@@ -211,32 +229,47 @@ export default function CadastrePage() {
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al registrar ocupación.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function runDelete(action: () => Promise<void>, fallback: string) {
+    setPageError(null);
+    try {
+      await action();
+      await loadData();
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : fallback);
     }
   }
 
   async function handleDeleteUnit(u: UnitRow) {
     if (!window.confirm(`¿Eliminar la unidad ${u.number}? (Si tiene historial de reservas o pagos se desactivará.)`)) return;
-    const res = await apiFetch<{ deleted: boolean; deactivated: boolean }>(`/cadastre/units/${u.id}`, {
-      method: 'DELETE',
-    });
-    setToast(res.deleted ? `Unidad ${u.number} eliminada.` : `Unidad ${u.number} desactivada (conserva historial).`);
-    await loadData();
+    await runDelete(async () => {
+      const res = await apiFetch<{ deleted: boolean; deactivated: boolean }>(`/cadastre/units/${u.id}`, {
+        method: 'DELETE',
+      });
+      setToast(res.deleted ? `Unidad ${u.number} eliminada.` : `Unidad ${u.number} desactivada (conserva historial).`);
+    }, 'No se pudo eliminar la unidad.');
   }
 
   async function handleDeletePerson(p: PersonRow) {
     if (!window.confirm(`¿Eliminar a ${p.fullName}?`)) return;
-    const res = await apiFetch<{ deleted: boolean; deactivated: boolean }>(`/cadastre/persons/${p.id}`, {
-      method: 'DELETE',
-    });
-    setToast(res.deleted ? `${p.fullName} eliminado(a).` : `${p.fullName} desactivado(a) (conserva historial).`);
-    await loadData();
+    await runDelete(async () => {
+      const res = await apiFetch<{ deleted: boolean; deactivated: boolean }>(`/cadastre/persons/${p.id}`, {
+        method: 'DELETE',
+      });
+      setToast(res.deleted ? `${p.fullName} eliminado(a).` : `${p.fullName} desactivado(a) (conserva historial).`);
+    }, 'No se pudo eliminar la persona.');
   }
 
   async function handleDeleteOccupancy(occupancyId: string, label: string) {
     if (!window.confirm(`¿Quitar la ocupación de ${label}?`)) return;
-    await apiFetch(`/cadastre/occupancies/${occupancyId}`, { method: 'DELETE' });
-    setToast('Ocupación eliminada.');
-    await loadData();
+    await runDelete(async () => {
+      await apiFetch(`/cadastre/occupancies/${occupancyId}`, { method: 'DELETE' });
+      setToast('Ocupación eliminada.');
+    }, 'No se pudo eliminar la ocupación.');
   }
 
   const occupiedCount = units.filter((u) => u.occupancies.length > 0).length;
@@ -289,6 +322,7 @@ export default function CadastrePage() {
       />
 
       {toast && <HabitatToast type="ok" text={toast} onClose={() => setToast(null)} />}
+      {pageError && <HabitatToast type="err" text={pageError} onClose={() => setPageError(null)} />}
 
       <div className="h-kpi-strip">
         <article className="h-kpi-card">
@@ -350,6 +384,9 @@ export default function CadastrePage() {
                     <td>{u.areaSqm ? `${u.areaSqm} m²` : '—'}</td>
                     <td>
                       <Money cents={u.monthlyFeeCents} />
+                      <div style={{ fontSize: '11px', color: 'var(--muted-foreground)' }}>
+                        {u.monthlyFeeIsManual ? 'Manual' : 'Automática'}
+                      </div>
                     </td>
                     <td style={{ fontSize: '12.5px' }}>
                       {u.occupancies.length > 0 ? (
@@ -514,16 +551,16 @@ export default function CadastrePage() {
             }}
           >
             <div style={{ color: 'var(--muted-foreground)', marginBottom: '4px', fontSize: '12px' }}>
-              Cálculo automático (<Money cents={feePerSqmCents} /> / m²):
+              Alícuota automática: metraje × tarifa del edificio (<Money cents={feePerSqmCents} /> / m²)
             </div>
             <div style={{ fontSize: '16px', fontWeight: 700 }}>
-              {parsedArea && feePerSqmCents > 0 ? (
+              {editingUnit && areaUnchanged ? (
                 <>
-                  {parsedArea} m² × <Money cents={feePerSqmCents} /> = <Money cents={computedFeeCents} /> / mes
+                  <Money cents={editingUnit.autoMonthlyFeeCents} /> / mes
                 </>
               ) : (
                 <span style={{ fontSize: '12.5px', fontWeight: 400, color: 'var(--muted-foreground)' }}>
-                  Ingresa el metraje para calcular automáticamente.
+                  El sistema calcula la alícuota al guardar según el metraje ingresado.
                 </span>
               )}
             </div>
@@ -545,8 +582,8 @@ export default function CadastrePage() {
             <button type="button" className="h-btn-outline" onClick={() => setDrawer(null)}>
               Cancelar
             </button>
-            <button type="submit" className="h-btn-dark">
-              {editingUnit ? 'Guardar cambios' : 'Guardar unidad'}
+            <button type="submit" className="h-btn-dark" disabled={saving}>
+              {saving ? 'Guardando…' : editingUnit ? 'Guardar cambios' : 'Guardar unidad'}
             </button>
           </div>
         </form>
@@ -581,8 +618,8 @@ export default function CadastrePage() {
             <button type="button" className="h-btn-outline" onClick={() => setDrawer(null)}>
               Cancelar
             </button>
-            <button type="submit" className="h-btn-dark">
-              Guardar persona
+            <button type="submit" className="h-btn-dark" disabled={saving}>
+              {saving ? 'Guardando…' : 'Guardar persona'}
             </button>
           </div>
         </form>
@@ -652,8 +689,8 @@ export default function CadastrePage() {
             <button type="button" className="h-btn-outline" onClick={() => setDrawer(null)}>
               Cancelar
             </button>
-            <button type="submit" className="h-btn-dark">
-              Guardar ocupación
+            <button type="submit" className="h-btn-dark" disabled={saving}>
+              {saving ? 'Guardando…' : 'Guardar ocupación'}
             </button>
           </div>
         </form>

@@ -17,6 +17,8 @@ export interface DashboardContextValue {
   token: string;
   me: StaffProfile;
   tenantId: string;
+  /** IANA timezone of the active building (tenant.timezone). */
+  tenantTimezone: string;
   setTenantId: (id: string) => void;
   refreshMe: () => Promise<void>;
   apiFetch: <T>(
@@ -34,6 +36,14 @@ export function useDashboard(): DashboardContextValue {
     throw new Error('useDashboard must be used within DashboardProvider');
   }
   return ctx;
+}
+
+function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
 }
 
 function readStoredTenant(): string | null {
@@ -150,6 +160,10 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     router.push('/login');
   }, [router]);
 
+  const activeTenant = me?.tenants.find((t) => t.id === tenantId);
+  // The API always returns tenant.timezone; the browser zone is only a fallback for stale sessions.
+  const tenantTimezone = activeTenant?.timezone || browserTimeZone();
+
   if (!token || !me) {
     return (
       <div style={{ padding: '48px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
@@ -159,7 +173,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <DashboardContext.Provider value={{ token, me, tenantId, setTenantId, refreshMe, apiFetch, logout }}>
+    <DashboardContext.Provider value={{ token, me, tenantId, tenantTimezone, setTenantId, refreshMe, apiFetch, logout }}>
       {children}
     </DashboardContext.Provider>
   );

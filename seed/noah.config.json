@@ -39,6 +39,7 @@
     "generalAdvanceHours": 24,
     "shortNoticeAdvanceMinutes": 60,
     "frequencyWeekStart": "MONDAY",
+    "monthlyFeeDueDay": 10,
     "cancellationPolicy": {
       "minHoursBefore": 24,
       "cleaningFeeHandling": "NON_REFUNDABLE"
@@ -434,6 +435,7 @@
     "spots": 4,
     "freeMinutes": 180,
     "overtimeFeeCentsPerHour": 150,
-    "rounding": "CEIL_HOUR"
+    "rounding": "CEIL_HOUR",
+    "alertMarginMinutes": 15
   }
 }
