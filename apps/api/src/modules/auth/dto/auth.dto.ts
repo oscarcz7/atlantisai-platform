@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
   MinLength,
 } from 'class-validator';
 import { type StaffRole } from '@noah/domain';
@@ -19,6 +20,7 @@ export class LoginDto {
 
   @IsString()
   @MinLength(8)
+  @MaxLength(128)
   password!: string;
 
   @IsOptional()
@@ -41,6 +43,7 @@ export class AcceptInviteDto {
 
   @IsString()
   @MinLength(10)
+  @MaxLength(128)
   password!: string;
 }
 
@@ -55,6 +58,7 @@ export class ResetPasswordDto {
 
   @IsString()
   @MinLength(10)
+  @MaxLength(128)
   newPassword!: string;
 }
 

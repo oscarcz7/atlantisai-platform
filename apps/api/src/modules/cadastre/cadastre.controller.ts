@@ -9,9 +9,17 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { type OccupancyRole, type TenantContext } from '@noah/domain';
+import { type TenantContext } from '@noah/domain';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe.js';
 import { CurrentTenant, Roles } from '../auth/decorators/roles.decorator.js';
-import { CadastreService, type ImportRowInput } from './cadastre.service.js';
+import { CadastreService } from './cadastre.service.js';
+import {
+  CreateOccupancyDto,
+  CreatePersonDto,
+  CreateUnitDto,
+  ImportRowsDto,
+  UpdateUnitDto,
+} from './dto/cadastre.dto.js';
 
 function requireTenant(ctx: TenantContext | undefined): TenantContext {
   if (!ctx) {
@@ -35,7 +43,7 @@ export class CadastreController {
 
   @Roles('SUPERADMIN', 'ADMIN', 'ACCOUNTANT', 'GUARD')
   @Get('units/:id')
-  getUnit(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+  getUnit(@CurrentTenant() ctx: TenantContext | undefined, @Param('id', ParseIdPipe) id: string) {
     return this.cadastreService.getUnitDetail(requireTenant(ctx), id);
   }
 
@@ -43,15 +51,7 @@ export class CadastreController {
   @Post('units')
   createUnit(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body()
-    body: {
-      number: string;
-      floor: number;
-      unitTypeId: string;
-      areaSqm?: number | null;
-      bedrooms?: number;
-      monthlyFeeCents?: number;
-    },
+    @Body() body: CreateUnitDto,
   ) {
     return this.cadastreService.createUnit(requireTenant(ctx), body);
   }
@@ -60,24 +60,15 @@ export class CadastreController {
   @Patch('units/:id')
   updateUnit(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Param('id') id: string,
-    @Body()
-    body: {
-      number?: string;
-      floor?: number;
-      unitTypeId?: string;
-      areaSqm?: number | null;
-      bedrooms?: number;
-      monthlyFeeCents?: number;
-      isActive?: boolean;
-    },
+    @Param('id', ParseIdPipe) id: string,
+    @Body() body: UpdateUnitDto,
   ) {
     return this.cadastreService.updateUnit(requireTenant(ctx), id, body);
   }
 
   @Roles('SUPERADMIN', 'ADMIN')
   @Delete('units/:id')
-  deactivateUnit(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+  deactivateUnit(@CurrentTenant() ctx: TenantContext | undefined, @Param('id', ParseIdPipe) id: string) {
     return this.cadastreService.deleteUnit(requireTenant(ctx), id);
   }
 
@@ -91,21 +82,14 @@ export class CadastreController {
   @Post('persons')
   createPerson(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body()
-    body: {
-      fullName: string;
-      nationalId: string;
-      waPhone: string;
-      email?: string;
-      consentAt?: string;
-    },
+    @Body() body: CreatePersonDto,
   ) {
     return this.cadastreService.createPerson(requireTenant(ctx), body);
   }
 
   @Roles('SUPERADMIN', 'ADMIN')
   @Delete('persons/:id')
-  deletePerson(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+  deletePerson(@CurrentTenant() ctx: TenantContext | undefined, @Param('id', ParseIdPipe) id: string) {
     return this.cadastreService.deletePerson(requireTenant(ctx), id);
   }
 
@@ -113,21 +97,14 @@ export class CadastreController {
   @Post('occupancies')
   createOccupancy(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body()
-    body: {
-      personId: string;
-      unitId: string;
-      role: OccupancyRole;
-      validFrom: string;
-      validTo?: string | null;
-    },
+    @Body() body: CreateOccupancyDto,
   ) {
     return this.cadastreService.createOccupancy(requireTenant(ctx), body);
   }
 
   @Roles('SUPERADMIN', 'ADMIN')
   @Delete('occupancies/:id')
-  deleteOccupancy(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+  deleteOccupancy(@CurrentTenant() ctx: TenantContext | undefined, @Param('id', ParseIdPipe) id: string) {
     return this.cadastreService.deleteOccupancy(requireTenant(ctx), id);
   }
 
@@ -135,7 +112,7 @@ export class CadastreController {
   @Post('import/preview')
   previewImport(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body() body: { rows: ImportRowInput[] },
+    @Body() body: ImportRowsDto,
   ) {
     return this.cadastreService.previewImport(requireTenant(ctx), body.rows);
   }
@@ -144,7 +121,7 @@ export class CadastreController {
   @Post('import/confirm')
   confirmImport(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body() body: { rows: ImportRowInput[] },
+    @Body() body: ImportRowsDto,
   ) {
     return this.cadastreService.confirmImport(requireTenant(ctx), body.rows);
   }

@@ -11,7 +11,15 @@ import {
 } from '@nestjs/common';
 import { type TenantContext } from '@noah/domain';
 import { CurrentTenant, Roles } from '../auth/decorators/roles.decorator.js';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe.js';
 import { BillingService } from './billing.service.js';
+import {
+  GenerateMonthlyFeesDto,
+  RecordDepositMovementDto,
+  RejectPaymentProofDto,
+  SubmitPaymentProofDto,
+  parsePaymentProofStatus,
+} from './dto/billing.dto.js';
 
 function requireTenant(ctx: TenantContext | undefined): TenantContext {
   if (!ctx) {
@@ -29,7 +37,7 @@ export class BillingController {
 
   @Roles('SUPERADMIN', 'ADMIN', 'ACCOUNTANT')
   @Get('units/:unitId/statement')
-  getStatement(@CurrentTenant() ctx: TenantContext | undefined, @Param('unitId') unitId: string) {
+  getStatement(@CurrentTenant() ctx: TenantContext | undefined, @Param('unitId', ParseIdPipe) unitId: string) {
     return this.billingService.getUnitStatement(requireTenant(ctx), unitId);
   }
 
@@ -37,7 +45,7 @@ export class BillingController {
   @Post('monthly-fees/generate')
   generateMonthlyFees(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body() body: { billingMonth: string; dueDate: string },
+    @Body() body: GenerateMonthlyFeesDto,
   ) {
     return this.billingService.generateMonthlyFees(requireTenant(ctx), body.billingMonth, body.dueDate);
   }
@@ -46,14 +54,7 @@ export class BillingController {
   @Post('deposits/movements')
   recordDepositMovement(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body()
-    body: {
-      unitId: string;
-      type: 'DEPOSIT' | 'DEDUCTION' | 'REFUND';
-      amountCents: number;
-      reason: string;
-      evidenceKey?: string;
-    },
+    @Body() body: RecordDepositMovementDto,
   ) {
     return this.billingService.recordDepositMovement(requireTenant(ctx), body);
   }
@@ -62,25 +63,16 @@ export class BillingController {
   @Get('payment-proofs')
   listPaymentProofs(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Query('status') status?: 'PENDING' | 'APPROVED' | 'REJECTED',
+    @Query('status') status?: string,
   ) {
-    return this.billingService.listPaymentProofs(requireTenant(ctx), status);
+    return this.billingService.listPaymentProofs(requireTenant(ctx), parsePaymentProofStatus(status));
   }
 
   @Roles('SUPERADMIN', 'ADMIN', 'ACCOUNTANT')
   @Post('payment-proofs')
   submitPaymentProof(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body()
-    body: {
-      unitId: string;
-      reservationId?: string;
-      fileKey: string;
-      bank: string;
-      amountCents: number;
-      transferDate: string;
-      reference: string;
-    },
+    @Body() body: SubmitPaymentProofDto,
   ) {
     return this.billingService.submitPaymentProof(requireTenant(ctx), body);
   }
@@ -88,7 +80,10 @@ export class BillingController {
   @Roles('SUPERADMIN', 'ACCOUNTANT')
   @Post('payment-proofs/:id/approve')
   @HttpCode(200)
-  approvePaymentProof(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+  approvePaymentProof(
+    @CurrentTenant() ctx: TenantContext | undefined,
+    @Param('id', ParseIdPipe) id: string,
+  ) {
     return this.billingService.approvePaymentProof(requireTenant(ctx), id);
   }
 
@@ -97,8 +92,8 @@ export class BillingController {
   @HttpCode(200)
   rejectPaymentProof(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Param('id') id: string,
-    @Body() body: { reason: string },
+    @Param('id', ParseIdPipe) id: string,
+    @Body() body: RejectPaymentProofDto,
   ) {
     return this.billingService.rejectPaymentProof(requireTenant(ctx), id, body.reason);
   }

@@ -13,12 +13,16 @@ import {
 } from '@nestjs/common';
 import { type TenantContext } from '@noah/domain';
 import { CurrentTenant, Roles } from '../auth/decorators/roles.decorator.js';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe.js';
 import {
-  type CreateAdminBlockInput,
-  type CreateReservationInput,
-  type UpdateReservationInput,
-  ReservationsService,
-} from './reservations.service.js';
+  CancelReservationDto,
+  CreateAdminBlockDto,
+  CreateReservationDto,
+  UpdateReservationDto,
+  parseIdQuery,
+  parseIsoQuery,
+} from './dto/reservations.dto.js';
+import { ReservationsService } from './reservations.service.js';
 
 function requireTenant(ctx: TenantContext | undefined): TenantContext {
   if (!ctx) {
@@ -44,7 +48,11 @@ export class ReservationsController {
     @Query('to') to?: string,
     @Query('amenityId') amenityId?: string,
   ) {
-    return this.reservationsService.listCalendar(requireTenant(ctx), { from, to, amenityId });
+    return this.reservationsService.listCalendar(requireTenant(ctx), {
+      from: parseIsoQuery(from, 'from'),
+      to: parseIsoQuery(to, 'to'),
+      amenityId: parseIdQuery(amenityId),
+    });
   }
 
   @Roles('SUPERADMIN', 'ADMIN')
@@ -52,7 +60,7 @@ export class ReservationsController {
   @HttpCode(200)
   simulate(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body() body: CreateReservationInput,
+    @Body() body: CreateReservationDto,
   ) {
     return this.reservationsService.simulate(requireTenant(ctx), body);
   }
@@ -61,7 +69,7 @@ export class ReservationsController {
   @Post()
   create(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body() body: CreateReservationInput,
+    @Body() body: CreateReservationDto,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     return this.reservationsService.create(requireTenant(ctx), {
@@ -74,7 +82,7 @@ export class ReservationsController {
   @Post('admin-blocks')
   createAdminBlock(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body() body: CreateAdminBlockInput,
+    @Body() body: CreateAdminBlockDto,
   ) {
     return this.reservationsService.createAdminBlock(requireTenant(ctx), body);
   }
@@ -83,8 +91,8 @@ export class ReservationsController {
   @Patch(':id')
   update(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Param('id') id: string,
-    @Body() body: UpdateReservationInput,
+    @Param('id', ParseIdPipe) id: string,
+    @Body() body: UpdateReservationDto,
   ) {
     return this.reservationsService.update(requireTenant(ctx), id, body);
   }
@@ -94,8 +102,8 @@ export class ReservationsController {
   @HttpCode(200)
   cancel(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Param('id') id: string,
-    @Body() body: { reason: string },
+    @Param('id', ParseIdPipe) id: string,
+    @Body() body: CancelReservationDto,
   ) {
     return this.reservationsService.cancel(requireTenant(ctx), id, body.reason);
   }

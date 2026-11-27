@@ -9,13 +9,18 @@ import {
   Post,
   Put,
 } from '@nestjs/common';
-import { type OccupancyRole, type TenantContext } from '@noah/domain';
+import { type TenantContext } from '@noah/domain';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe.js';
 import { CurrentTenant, Roles } from '../auth/decorators/roles.decorator.js';
+import { CatalogService } from './catalog.service.js';
 import {
-  CatalogService,
-  type UpsertAmenityInput,
-  type UpsertSettingsInput,
-} from './catalog.service.js';
+  CreateCleaningComboDto,
+  SetAccessRuleDto,
+  UpsertAmenityDto,
+  UpsertParkingDto,
+  UpsertSettingsDto,
+  UpsertUnitTypeDto,
+} from './dto/catalog.dto.js';
 
 function requireTenant(ctx: TenantContext | undefined): TenantContext {
   if (!ctx) {
@@ -39,7 +44,7 @@ export class CatalogController {
 
   @Roles('SUPERADMIN', 'ADMIN')
   @Put('settings')
-  upsertSettings(@CurrentTenant() ctx: TenantContext | undefined, @Body() body: UpsertSettingsInput) {
+  upsertSettings(@CurrentTenant() ctx: TenantContext | undefined, @Body() body: UpsertSettingsDto) {
     return this.catalogService.upsertSettings(requireTenant(ctx), body);
   }
 
@@ -53,14 +58,14 @@ export class CatalogController {
   @Post('unit-types')
   upsertUnitType(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body() body: { code: string; name: string; bedrooms?: number; includedGuests: number },
+    @Body() body: UpsertUnitTypeDto,
   ) {
     return this.catalogService.upsertUnitType(requireTenant(ctx), body);
   }
 
   @Roles('SUPERADMIN', 'ADMIN')
   @Delete('unit-types/:id')
-  deleteUnitType(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+  deleteUnitType(@CurrentTenant() ctx: TenantContext | undefined, @Param('id', ParseIdPipe) id: string) {
     return this.catalogService.deleteUnitType(requireTenant(ctx), id);
   }
 
@@ -72,13 +77,13 @@ export class CatalogController {
 
   @Roles('SUPERADMIN', 'ADMIN')
   @Post('amenities')
-  upsertAmenity(@CurrentTenant() ctx: TenantContext | undefined, @Body() body: UpsertAmenityInput) {
+  upsertAmenity(@CurrentTenant() ctx: TenantContext | undefined, @Body() body: UpsertAmenityDto) {
     return this.catalogService.upsertAmenity(requireTenant(ctx), body);
   }
 
   @Roles('SUPERADMIN', 'ADMIN')
   @Delete('amenities/:id')
-  deleteAmenity(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+  deleteAmenity(@CurrentTenant() ctx: TenantContext | undefined, @Param('id', ParseIdPipe) id: string) {
     return this.catalogService.deleteAmenity(requireTenant(ctx), id);
   }
 
@@ -86,7 +91,7 @@ export class CatalogController {
   @Put('access-matrix')
   setAccessRule(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body() body: { amenityId: string; occupancyRole: OccupancyRole; allowed: boolean },
+    @Body() body: SetAccessRuleDto,
   ) {
     return this.catalogService.setAccessRule(requireTenant(ctx), body);
   }
@@ -101,14 +106,14 @@ export class CatalogController {
   @Post('cleaning-combos')
   createCleaningCombo(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body() body: { amenityIds: string[]; feeCents: number },
+    @Body() body: CreateCleaningComboDto,
   ) {
     return this.catalogService.createCleaningCombo(requireTenant(ctx), body);
   }
 
   @Roles('SUPERADMIN', 'ADMIN')
   @Delete('cleaning-combos/:id')
-  deleteCleaningCombo(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+  deleteCleaningCombo(@CurrentTenant() ctx: TenantContext | undefined, @Param('id', ParseIdPipe) id: string) {
     return this.catalogService.deleteCleaningCombo(requireTenant(ctx), id);
   }
 
@@ -122,7 +127,7 @@ export class CatalogController {
   @Put('parking')
   upsertParking(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body() body: { spots: number; freeMinutes: number; overtimeFeeCentsPerHour: number; rounding?: string },
+    @Body() body: UpsertParkingDto,
   ) {
     return this.catalogService.upsertParkingConfig(requireTenant(ctx), body);
   }

@@ -4,7 +4,14 @@ import {
   CurrentUser,
   Roles,
 } from '../auth/decorators/roles.decorator.js';
-import { type BuildingConfigImportJson, TenantsService } from './tenants.service.js';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe.js';
+import { TenantsService } from './tenants.service.js';
+import {
+  CloneTenantDto,
+  CreateTenantDto,
+  ImportBuildingConfigDto,
+  UpdateTenantDto,
+} from './dto/tenants.dto.js';
 
 @Controller('tenants')
 export class TenantsController {
@@ -19,18 +26,7 @@ export class TenantsController {
   @Roles('SUPERADMIN')
   @Post()
   create(
-    @Body()
-    body: {
-      code: string;
-      name: string;
-      ruc?: string;
-      logoUrl?: string;
-      timezone?: string;
-      contacts?: Record<string, unknown>;
-      officeHours?: Record<string, unknown>;
-      bankAccounts?: Array<Record<string, unknown>>;
-      adminUserIds?: string[];
-    },
+    @Body() body: CreateTenantDto,
   ) {
     return this.tenantsService.create(body);
   }
@@ -39,18 +35,8 @@ export class TenantsController {
   @Patch(':id')
   update(
     @CurrentUser() user: AuthenticatedStaffUser,
-    @Param('id') id: string,
-    @Body()
-    body: {
-      name?: string;
-      ruc?: string;
-      logoUrl?: string;
-      timezone?: string;
-      contacts?: Record<string, unknown>;
-      officeHours?: Record<string, unknown>;
-      bankAccounts?: Array<Record<string, unknown>>;
-      adminUserIds?: string[];
-    },
+    @Param('id', ParseIdPipe) id: string,
+    @Body() body: UpdateTenantDto,
   ) {
     if (user.role !== 'SUPERADMIN' && !user.tenantIds.includes(id)) {
       throw new ForbiddenException({
@@ -58,17 +44,21 @@ export class TenantsController {
         message: 'No tienes permiso para editar este edificio.',
       });
     }
-    return this.tenantsService.update(id, {
-      ...body,
-      adminUserIds: user.role === 'SUPERADMIN' ? body.adminUserIds : undefined,
-    });
+    return this.tenantsService.update(
+      id,
+      {
+        ...body,
+        adminUserIds: user.role === 'SUPERADMIN' ? body.adminUserIds : undefined,
+      },
+      user.id,
+    );
   }
 
   @Roles('SUPERADMIN')
   @Post('import-config')
   importConfig(
     @CurrentUser() user: AuthenticatedStaffUser,
-    @Body() body: BuildingConfigImportJson,
+    @Body() body: ImportBuildingConfigDto,
   ) {
     return this.tenantsService.importConfig(body, user.id);
   }
@@ -77,15 +67,15 @@ export class TenantsController {
   @Post(':id/clone')
   clone(
     @CurrentUser() user: AuthenticatedStaffUser,
-    @Param('id') sourceId: string,
-    @Body() body: { code: string; name: string },
+    @Param('id', ParseIdPipe) sourceId: string,
+    @Body() body: CloneTenantDto,
   ) {
     return this.tenantsService.cloneTenant(sourceId, body, user.id);
   }
 
   @Roles('SUPERADMIN')
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.tenantsService.deleteTenant(id);
+  remove(@CurrentUser() user: AuthenticatedStaffUser, @Param('id', ParseIdPipe) id: string) {
+    return this.tenantsService.deleteTenant(id, user.id);
   }
 }

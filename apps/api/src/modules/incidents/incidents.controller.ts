@@ -12,6 +12,14 @@ import {
 } from '@nestjs/common';
 import { type TenantContext } from '@noah/domain';
 import { CurrentTenant, Roles } from '../auth/decorators/roles.decorator.js';
+import { ParseIdPipe } from '../../common/pipes/parse-id.pipe.js';
+import {
+  CreateIncidentDto,
+  SubscribeIncidentDto,
+  TICKET_STATUSES,
+  type TicketStatus,
+  UpdateIncidentStatusDto,
+} from './dto/incidents.dto.js';
 import { IncidentsService } from './incidents.service.js';
 
 function requireTenant(ctx: TenantContext | undefined): TenantContext {
@@ -32,23 +40,19 @@ export class IncidentsController {
   @Get()
   list(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Query('status') status?: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED',
+    @Query('status') status?: string,
   ) {
-    return this.incidentsService.list(requireTenant(ctx), status);
+    if (status !== undefined && status !== '' && !(TICKET_STATUSES as readonly string[]).includes(status)) {
+      throw new BadRequestException({ code: 'INVALID_STATUS', message: 'Estado de incidencia inválido.' });
+    }
+    return this.incidentsService.list(requireTenant(ctx), (status || undefined) as TicketStatus | undefined);
   }
 
   @Roles('SUPERADMIN', 'ADMIN', 'GUARD')
   @Post()
   create(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Body()
-    body: {
-      category: string;
-      location: string;
-      description: string;
-      urgency?: 'LOW' | 'MEDIUM' | 'HIGH' | 'EMERGENCY';
-      photos?: string[];
-    },
+    @Body() body: CreateIncidentDto,
   ) {
     return this.incidentsService.create(requireTenant(ctx), body);
   }
@@ -57,8 +61,8 @@ export class IncidentsController {
   @Patch(':id/status')
   updateStatus(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Param('id') id: string,
-    @Body() body: { status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'; assignedTo?: string },
+    @Param('id', ParseIdPipe) id: string,
+    @Body() body: UpdateIncidentStatusDto,
   ) {
     return this.incidentsService.updateStatus(requireTenant(ctx), id, body.status, body.assignedTo);
   }
@@ -67,15 +71,15 @@ export class IncidentsController {
   @Post(':id/subscribe')
   subscribe(
     @CurrentTenant() ctx: TenantContext | undefined,
-    @Param('id') id: string,
-    @Body() body: { personId: string },
+    @Param('id', ParseIdPipe) id: string,
+    @Body() body: SubscribeIncidentDto,
   ) {
     return this.incidentsService.subscribe(requireTenant(ctx), id, body.personId);
   }
 
   @Roles('SUPERADMIN', 'ADMIN')
   @Delete(':id')
-  remove(@CurrentTenant() ctx: TenantContext | undefined, @Param('id') id: string) {
+  remove(@CurrentTenant() ctx: TenantContext | undefined, @Param('id', ParseIdPipe) id: string) {
     return this.incidentsService.remove(requireTenant(ctx), id);
   }
 }
