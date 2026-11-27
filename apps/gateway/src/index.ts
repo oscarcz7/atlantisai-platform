@@ -19,7 +19,7 @@ interface PulledCommand {
 }
 
 const API_URL = (process.env['GATEWAY_API_URL'] || 'http://localhost:4000').replace(/\/$/, '');
-const GATEWAY_TOKEN = process.env['GATEWAY_API_TOKEN'] || 'dev-gateway-token';
+const GATEWAY_TOKEN = process.env['GATEWAY_API_TOKEN'] ?? '';
 const TENANT = process.env['GATEWAY_TENANT'] || 'noah';
 const MODE = (process.env['GATEWAY_MODE'] || 'fake').toLowerCase(); // 'fake' | 'hikvision'
 const POLL_MS = Number(process.env['GATEWAY_POLL_MS'] || 3000);
@@ -137,6 +137,16 @@ async function main() {
   console.log(
     `[NOAH Edge Gateway] Iniciado | mode=${MODE} | tenant=${TENANT} | api=${API_URL} | poll=${POLL_MS}ms`,
   );
+  if (!GATEWAY_TOKEN) {
+    console.error(
+      '[NOAH Edge Gateway] GATEWAY_API_TOKEN es obligatorio (genéralo en el dashboard: Acceso → Rotar token del gateway).',
+    );
+    process.exit(1);
+  }
+  if (MODE === 'hikvision' && !/^https:\/\//.test(API_URL) && !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(API_URL)) {
+    console.error('[NOAH Edge Gateway] GATEWAY_API_URL debe usar https:// en modo hikvision.');
+    process.exit(1);
+  }
   if (MODE === 'hikvision' && !HIK_PASS) {
     console.warn('[NOAH Edge Gateway] Advertencia: HIKVISION_PASS está vacío.');
   }
