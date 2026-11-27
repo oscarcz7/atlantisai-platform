@@ -29,7 +29,7 @@
     "@noah/domain": "workspace:*",
     "@noah/rules": "workspace:*",
     "@prisma/client": "^5.22.0",
-    "@sentry/node": "^8.45.0",
+    "@sentry/node": "^11.19.0",
     "argon2": "^0.41.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
