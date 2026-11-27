@@ -17,7 +17,10 @@
     "seed:admin": "tsx --env-file=../../.env src/scripts/seed-admin.ts",
     "seed": "tsx --env-file=../../.env src/scripts/seed-noah.ts",
     "dev:tsx": "tsx watch --env-file=../../.env src/main.ts",
-    "rehash:national-ids": "tsx --env-file=../../.env src/scripts/rehash-national-ids.ts"
+    "rehash:national-ids": "tsx --env-file=../../.env src/scripts/rehash-national-ids.ts",
+    "staff:create": "tsx --env-file=../../.env src/scripts/staff-cli.ts create",
+    "staff:reset-2fa": "tsx --env-file=../../.env src/scripts/staff-cli.ts reset-2fa",
+    "staff:reset-password": "tsx --env-file=../../.env src/scripts/staff-cli.ts reset-password"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

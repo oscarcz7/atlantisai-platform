@@ -1,11 +1,20 @@
+import { randomBytes } from 'node:crypto';
 import { generateUuidV7 } from '@noah/domain';
 import argon2 from 'argon2';
 import { PrismaClient } from '@prisma/client';
 
+/**
+ * LOCAL DEVELOPMENT ONLY. For real environments use `pnpm --filter @noah/api staff:create`.
+ * Without SEED_ADMIN_PASSWORD a random password is generated and printed once.
+ */
 async function main() {
+  if (process.env['NODE_ENV'] === 'production') {
+    throw new Error('seed-admin es solo para desarrollo local. Usa staff:create en producción.');
+  }
   const prisma = new PrismaClient();
   const email = (process.env['SEED_ADMIN_EMAIL'] ?? 'admin@edificionoah.com').toLowerCase();
-  const password = process.env['SEED_ADMIN_PASSWORD'] ?? 'NoahAdmin2026!';
+  const generated = !process.env['SEED_ADMIN_PASSWORD'];
+  const password = process.env['SEED_ADMIN_PASSWORD'] ?? randomBytes(18).toString('base64url');
   const fullName = process.env['SEED_ADMIN_NAME'] ?? 'SuperAdmin NOAH';
 
   const tenant = await prisma.tenant.upsert({
@@ -20,6 +29,9 @@ async function main() {
   });
 
   const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+  // The building admin gets its own password (accounts must never share credentials).
+  const bldgPassword = randomBytes(18).toString('base64url');
+  const bldgPasswordHash = await argon2.hash(bldgPassword, { type: argon2.argon2id });
   const existing = await prisma.staffUser.findUnique({ where: { email } });
 
   if (!existing) {
@@ -34,7 +46,9 @@ async function main() {
         tenants: { create: [{ tenantId: tenant.id }] },
       },
     });
-    process.stdout.write(`SuperAdmin creado: ${email} (Edificio: ${tenant.name})\n`);
+    process.stdout.write(
+      `SuperAdmin creado: ${email} (Edificio: ${tenant.name})${generated ? ` · contraseña: ${password}` : ''}\n`,
+    );
   } else {
     process.stdout.write(`SuperAdmin ya existe: ${email}\n`);
   }
@@ -48,13 +62,15 @@ async function main() {
         id: generateUuidV7(),
         email: bldgAdminEmail,
         fullName: 'Administrador NOAH',
-        passwordHash,
+        passwordHash: bldgPasswordHash,
         role: 'ADMIN',
         isActive: true,
         tenants: { create: [{ tenantId: tenant.id }] },
       },
     });
-    process.stdout.write(`Administrador creado: ${bldgAdminEmail} (Edificio: ${tenant.name})\n`);
+    process.stdout.write(
+      `Administrador creado: ${bldgAdminEmail} (Edificio: ${tenant.name}) · contraseña: ${bldgPassword}\n`,
+    );
   } else {
     process.stdout.write(`Administrador ya existe: ${bldgAdminEmail}\n`);
   }
