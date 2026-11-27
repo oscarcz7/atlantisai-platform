@@ -59,8 +59,8 @@ jobs:
             --project "${GCP_PROJECT}" \
             --region "${GCP_REGION}" \
             --image "${IMAGE}" \
-            --command "npx" \
-            --args "--yes,prisma@5.22.0,migrate,deploy,--schema=prisma/schema.prisma"
+            --command "./node_modules/.bin/prisma" \
+            --args "migrate,deploy,--schema=prisma/schema.prisma"
           gcloud run jobs execute noah-api-migrate \
             --project "${GCP_PROJECT}" \
             --region "${GCP_REGION}" \

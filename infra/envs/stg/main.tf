@@ -179,8 +179,9 @@ resource "google_cloud_run_v2_job" "api_migrate" {
 
       containers {
         image   = var.api_image
-        command = ["npx"]
-        args    = ["--yes", "prisma@5.22.0", "migrate", "deploy", "--schema=prisma/schema.prisma"]
+        # Prisma CLI ships in the image (prod dependency): no download at runtime.
+        command = ["./node_modules/.bin/prisma"]
+        args    = ["migrate", "deploy", "--schema=prisma/schema.prisma"]
 
         env {
           name = "DATABASE_URL"
