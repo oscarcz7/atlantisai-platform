@@ -90,6 +90,13 @@ export const authApi = {
       skipAuthRefresh: true,
     }),
 
+  acceptInvite: (token: string, password: string) =>
+    apiFetch<{ requires2faSetup: true; setupToken: string }>('/auth/accept-invite', {
+      method: 'POST',
+      body: { token, password },
+      skipAuthRefresh: true,
+    }),
+
   logout: () => apiFetch<void>('/auth/logout', { method: 'POST', skipAuthRefresh: true }),
 
   me: (token: string) => apiFetch<StaffProfile>('/auth/me', { token }),
